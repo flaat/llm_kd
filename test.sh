@@ -6,8 +6,8 @@ model_list=(
     "unsloth_deepseek_r1_qwen_7B"
 )
 
-# Iterate over each model configuration and run tests.py accordingly.
+# Iterate over each model configuration and run main.py accordingly.
 for model in "${model_list[@]}"; do
-    echo "Running tests.py with model '$model'..."
+    echo "Running main.py with model '$model'..."
     python main.py --test_llm=True --model_name="$model" --fine_tuned=True
 done
