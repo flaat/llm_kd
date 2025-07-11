@@ -2,7 +2,7 @@ from transformers import AutoTokenizer
 import torch
 from tqdm import tqdm
 from vllm import LLM, SamplingParams
-from data import dataset_kb
+from data.dataset_kb import dataset_kb
 import random
 import numpy as np
 from .utils import MODEL_MAPPING, prompt, prompt_ref
@@ -83,7 +83,7 @@ def extract_explanations(results: list[str]):
             print(f"⚠️ JSON parsing error in {text}")
             return explanations.append(None)
     
-    return explanations[0], explanations[1], explanations[2] 
+    return tuple(explanations[i] if i < len(explanations) else None for i in range(3))
 
 
 def build_dataset(model_name: str, temperature: float, top_p: float, dataset: str, max_tokens: int, repetition_penalty: float, max_model_len):
@@ -110,7 +110,7 @@ def build_dataset(model_name: str, temperature: float, top_p: float, dataset: st
     # Initialize LLM with optimized GPU memory usage
     llm = LLM(
         model=model_name, 
-        gpu_memory_utilization=0.8, 
+        gpu_memory_utilization=0.92, 
         max_model_len=max_model_len, 
         max_num_seqs=1
     )
@@ -118,8 +118,8 @@ def build_dataset(model_name: str, temperature: float, top_p: float, dataset: st
     # Initialize worker LLM for generating explanations
     # Using a fine-tuned smaller model
     worker_llm = LLM(
-        model="qwen_0.5B", 
-        gpu_memory_utilization=0.8, 
+        model="unsloth/Qwen2.5-0.5B-Instruct", 
+        gpu_memory_utilization=0.97, 
         max_model_len=max_model_len, 
         max_num_seqs=1,
         enable_lora=True
@@ -133,10 +133,15 @@ def build_dataset(model_name: str, temperature: float, top_p: float, dataset: st
     with open(f"src/explainer/counterfactuals.json", 'r', encoding='utf-8') as file1:
         data1 = json.load(file1)
 
+    
+    from vllm.lora.request import LoRARequest
+
+    lora_checkpoint_directory_path = f"outputs_unsloth/unsloth_qwen_0.5B/checkpoint-500"
+
     i = 0  # Counter for responses
 
     for dataset_name, examples in data1.items():
-        if dataset_name.strip() == dataset:
+        if dataset_name.lower() == dataset:
             for index, values in examples.items():
                 for counterfactual in values["counterfactuals"]:
                     
@@ -163,7 +168,7 @@ def build_dataset(model_name: str, temperature: float, top_p: float, dataset: st
                             try:
                                 with torch.no_grad():
                                     start = time.time()
-                                    outputs = worker_llm.generate([text], sampling_params=sampling_params)
+                                    outputs = worker_llm.generate([text], sampling_params=sampling_params, lora_request=LoRARequest("counterfactual_explainability_adapter", 1, lora_checkpoint_directory_path))
                                     explanations.append(outputs)
                                     end = time.time()
                             except AssertionError as assert_e:

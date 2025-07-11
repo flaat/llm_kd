@@ -76,7 +76,8 @@ def display_config(args: argparse.Namespace) -> None:
         args: Parsed command-line arguments
     """
     print("\n========== EXPERIMENT CONFIGURATION ==========")
-    print(f"Model name:          {args.model_name}")
+    print(f"Teacher Model name:          {args.model_name}")
+    print(f"Teacher Model name:          unsloth/Qwen2.5-0.5B-Instruct-FineTuned")
     print(f"Model context length: {args.max_model_len}")
     print("\n----- Generation Parameters -----")
     print(f"Temperature:         {args.temperature}")
