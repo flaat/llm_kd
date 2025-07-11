@@ -90,7 +90,7 @@ def build_dataset(model_name: str, temperature: float, top_p: float, dataset: st
     set_full_reproducibility()
     
     LOWER_BOUND = 0
-    UPPER_BOUND = 49999
+    UPPER_BOUND = 50000
     
     global prompt
     global prompt_ref
@@ -136,7 +136,7 @@ def build_dataset(model_name: str, temperature: float, top_p: float, dataset: st
     i = 0  # Counter for responses
 
     for dataset_name, examples in data1.items():
-        if dataset_name == dataset:
+        if dataset_name.strip() == dataset:
             for index, values in examples.items():
                 for counterfactual in values["counterfactuals"]:
                     
