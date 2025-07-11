@@ -74,16 +74,13 @@ def extract_explanations(results: list[str]):
                     explanations.append(explanation)
                 except KeyError:
                     print(f"⚠️ 'explanation' key not found in the response: {response}")
-                    return explanations.append(None)
             else:
                 print(f"⚠️ No JSON block found in the given text: {text}")
-                return explanations.append(None)
 
         except json.JSONDecodeError:
             print(f"⚠️ JSON parsing error in {text}")
-            return explanations.append(None)
-    
-    return tuple(explanations[i] if i < len(explanations) else None for i in range(3))
+            
+    return tuple(explanations[:3] + [None] * (3 - len(explanations)))
 
 
 def build_dataset(model_name: str, temperature: float, top_p: float, dataset: str, max_tokens: int, repetition_penalty: float, max_model_len):
