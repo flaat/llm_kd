@@ -115,7 +115,7 @@ def build_dataset(model_name: str, temperature: float, top_p: float, dataset: st
     # Using a fine-tuned smaller model
     worker_llm = LLM(
         model="unsloth/Qwen2.5-0.5B-Instruct", 
-        gpu_memory_utilization=0.97, 
+        gpu_memory_utilization=0.96, 
         max_model_len=max_model_len, 
         max_num_seqs=1,
         enable_lora=True
@@ -136,7 +136,11 @@ def build_dataset(model_name: str, temperature: float, top_p: float, dataset: st
 
     i = 0  # Counter for responses
 
+    if dataset == "adult":
+        dataset = "adult income"
+
     for dataset_name, examples in data1.items():
+
         if dataset_name.lower() == dataset:
             for index, values in examples.items():
                 for counterfactual in values["counterfactuals"]:
