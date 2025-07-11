@@ -16,8 +16,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         '--model_name',
         type=str,
-        default='phi_4B',
-        help='Model name to use for experiments (default: phi_4B)'
+        default='deepseek_r1_qwen_32B_Q4_AWQ1',
+        help='Model name to use for experiments (default: deepseek_r1_qwen_32B_Q4_AWQ1)'
     )
     
     parser.add_argument(

@@ -31,9 +31,9 @@ MODEL_MAPPING = {
     "qwen_32BQ_Q4_GPTQ": "Qwen/Qwen2.5-32B-Instruct-GPTQ-Int4",  # 128k
     "qwen_72BQ_Q4_GPTQ": "Qwen/Qwen2.5-72B-Instruct-GPTQ-Int4",  # 128k
 
-    "deepseek_r1_qwen_32B_Q4_AWQ1": "inarikami/DeepSeek-R1-Distill-Qwen-32B-AWQ",
+    "deepseek_r1_qwen_32B_Q4_AWQ1": "inarikami/DeepSeek-R1-Distill-Qwen-32B-AWQ",    #used in the paper
     "deepseek_r1_qwen_32B_Q4_AWQ2": "Valdemardi/DeepSeek-R1-Distill-Qwen-32B-AWQ",
-    "deepseek_r1_qwen_32B_Q4_GPTQ": "numen-tech/DeepSeek-R1-Distill-Qwen-32B-GPTQ-Int4",
+    "deepseek_r1_qwen_32B_Q4_GPTQ": "numen-tech/DeepSeek-R1-Distill-Qwen-32B-GPTQ-Int4", 
     "deepseek_r1_qwen_32B": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
     "deepseek_r1_qwen_3B": "deepseek-ai/DeepSeek-R1-Distill-Qwen-3B",
     "deepseek_r1_qwen_7B": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",

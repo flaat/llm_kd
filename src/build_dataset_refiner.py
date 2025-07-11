@@ -45,13 +45,20 @@ def save_responses(responses, output_file):
         json.dump(existing_responses, output, indent=4)
     print(f"✅ Responses saved to {output_file}.")
 
-def extract_explanations(outputs: list[str]):
+def extract_explanations(results: list[str]):
     """
     Extracts explanations from the generated outputs.
     """
     explanations = []
-    for output in outputs:
-        text = output.outputs[0].text
+    for outputs in results:
+
+        for output in outputs:
+            text = output.outputs[0].text
+
+        if not text:
+            print("⚠️ No text generated in the output.")
+            return explanations.append(None)
+
         try:
             # Attempt to extract JSON block within triple backticks
             json_match = re.search(r"```json\n(.*?)\n```", text, re.DOTALL)
@@ -67,23 +74,23 @@ def extract_explanations(outputs: list[str]):
                     explanations.append(explanation)
                 except KeyError:
                     print(f"⚠️ 'explanation' key not found in the response: {response}")
-                    return None
+                    return explanations.append(None)
             else:
                 print(f"⚠️ No JSON block found in the given text: {text}")
-                return None
+                return explanations.append(None)
 
         except json.JSONDecodeError:
             print(f"⚠️ JSON parsing error in {text}")
-            return None
+            return explanations.append(None)
     
-    return explanations[0], explanations[1], explanations[2] if len(explanations) >= 3 else (None, None, None)
+    return explanations[0], explanations[1], explanations[2] 
 
 
 def build_dataset(model_name: str, temperature: float, top_p: float, dataset: str, max_tokens: int, repetition_penalty: float, max_model_len):
     set_full_reproducibility()
     
     LOWER_BOUND = 0
-    UPPER_BOUND = 200
+    UPPER_BOUND = 49999
     
     global prompt
     global prompt_ref
@@ -133,83 +140,83 @@ def build_dataset(model_name: str, temperature: float, top_p: float, dataset: st
             for index, values in examples.items():
                 for counterfactual in values["counterfactuals"]:
                     
-                    #if LOWER_BOUND <= i <= UPPER_BOUND: why there is this condition?
+                    if LOWER_BOUND <= i <= UPPER_BOUND: 
                         
-                    current_prompt_worker = base_prompt.format(
-                        dataset_description=dataset_kb[dataset_name], 
-                        factual_example=str(values["factual"]), 
-                        counterfactual_example=str(counterfactual)
-                    )
+                        current_prompt_worker = base_prompt.format(
+                            dataset_description=dataset_kb[dataset_name], 
+                            factual_example=str(values["factual"]), 
+                            counterfactual_example=str(counterfactual)
+                        )
 
-                    messages = [{"role": "user", "content": current_prompt_worker}]
-                    
-                    text = tokenizer.apply_chat_template(
-                        messages,
-                        tokenize=False,
-                        add_generation_prompt=True
-                    )
-                    
-                    # Generate explanations using the worker LLM
-                    N = 3
-                    explanations = []
-                    for j in range(N):
+                        messages = [{"role": "user", "content": current_prompt_worker}]
+                        
+                        text = tokenizer.apply_chat_template(
+                            messages,
+                            tokenize=False,
+                            add_generation_prompt=True
+                        )
+                        
+                        # Generate explanations using the worker LLM
+                        N = 3
+                        explanations = []
+                        for j in range(N):
+                            try:
+                                with torch.no_grad():
+                                    start = time.time()
+                                    outputs = worker_llm.generate([text], sampling_params=sampling_params)
+                                    explanations.append(outputs)
+                                    end = time.time()
+                            except AssertionError as assert_e:
+                                print(f"🚨 Assertion error: {assert_e}")
+                                continue
+                        
+                        explanation1, explanation2, explanation3 = extract_explanations(explanations)
+
+                        current_prompt_refiner = base_prompt_ref.format(
+                            dataset_description=dataset_kb[dataset_name], 
+                            factual_example=str(values["factual"]), 
+                            counterfactual_example=str(counterfactual),
+                            draft_explanation_1=explanation1,
+                            draft_explanation_2=explanation2,
+                            draft_explanation_3=explanation3
+                        )
+
+                        messages = [{"role": "user", "content": current_prompt_refiner}]
+
+                        text = tokenizer.apply_chat_template(
+                            messages,
+                            tokenize=False,
+                            add_generation_prompt=True
+                        )
+
                         try:
                             with torch.no_grad():
                                 start = time.time()
-                                outputs = worker_llm.generate([text], sampling_params=sampling_params)
-                                explanations.append(outputs)
+                                outputs = llm.generate([text], sampling_params=sampling_params)
                                 end = time.time()
                         except AssertionError as assert_e:
                             print(f"🚨 Assertion error: {assert_e}")
                             continue
-                    
-                    explanation1, explanation2, explanation3 = extract_explanations(explanations)
+                        
+                        # Process the outputs if generated successfully
+                        for output in outputs:
+                            prompt = output.prompt
+                            generated_text = output.outputs[0].text
 
-                    current_prompt_refiner = base_prompt_ref.format(
-                        dataset_description=dataset_kb[dataset_name], 
-                        factual_example=str(values["factual"]), 
-                        counterfactual_example=str(counterfactual),
-                        draft_explanation_1=explanation1,
-                        draft_explanation_2=explanation2,
-                        draft_explanation_3=explanation3
-                    )
+                        print(generated_text)
+                        responses[i] = {"prompt": prompt, "generated_text": generated_text}
+                        
 
-                    messages = [{"role": "user", "content": current_prompt_refiner}]
+                        print(f"#################### Time taken: {end - start:.2f} seconds, explanation number {i} ###########################")
 
-                    text = tokenizer.apply_chat_template(
-                        messages,
-                        tokenize=False,
-                        add_generation_prompt=True
-                    )
+                        # Save every 10 responses
+                        if i % 10 == 0:
+                            save_responses(responses, output_file)
+                            responses = {}  # Clear the temporary dictionary to prevent duplication
 
-                    try:
-                        with torch.no_grad():
-                            start = time.time()
-                            outputs = llm.generate([text], sampling_params=sampling_params)
-                            end = time.time()
-                    except AssertionError as assert_e:
-                        print(f"🚨 Assertion error: {assert_e}")
-                        continue
-                    
-                    # Process the outputs if generated successfully
-                    for output in outputs:
-                        prompt = output.prompt
-                        generated_text = output.outputs[0].text
-
-                    print(generated_text)
-                    responses[i] = {"prompt": prompt, "generated_text": generated_text}
-                    
-
-                    print(f"#################### Time taken: {end - start:.2f} seconds, explanation number {i} ###########################")
-
-                    # Save every 10 responses
-                    if i % 10 == 0:
-                        save_responses(responses, output_file)
-                        responses = {}  # Clear the temporary dictionary to prevent duplication
-
-                    # Delete large variables to free memory
-                    del generated_text
-                    del outputs
+                        # Delete large variables to free memory
+                        del generated_text
+                        del outputs
                     i += 1
     # Final save after loop completion
     save_responses(responses, output_file)
