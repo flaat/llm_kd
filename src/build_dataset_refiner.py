@@ -57,7 +57,6 @@ def extract_explanations(results: list[str]):
 
         if not text:
             print("⚠️ No text generated in the output.")
-            return explanations.append(None)
 
         try:
             # Attempt to extract JSON block within triple backticks
@@ -79,7 +78,7 @@ def extract_explanations(results: list[str]):
 
         except json.JSONDecodeError:
             print(f"⚠️ JSON parsing error in {text}")
-            
+
     return tuple(explanations[:3] + [None] * (3 - len(explanations)))
 
 
@@ -123,7 +122,7 @@ def build_dataset(model_name: str, temperature: float, top_p: float, dataset: st
     )
 
     # Define output file for results
-    output_file = f"data/{model_name.split('/')[-1]}_Refiner.json"
+    output_file = f"data/{dataset}_Refiner.json"
     responses = {}  # Dictionary to store new responses
 
     # Load counterfactual data
