@@ -8,8 +8,8 @@ import numpy as np
 import time
 import os
 from data.dataset_kb import dataset_kb
-from .utils import MODEL_MAPPING, prompt
-
+from .utils import MODEL_MAPPING, prompt, prompt_ref
+import re
 
 def set_full_reproducibility(seed=42):
     random.seed(seed)
@@ -69,6 +69,42 @@ def extract_feature_changes(factual, counterfactual):
             })
 
     return {"feature_changes": feature_changes}
+
+def extract_explanations(results: list[str]):
+    """
+    Extracts explanations from the generated outputs.
+    """
+    explanations = []
+    for outputs in results:
+
+        for output in outputs:
+            text = output.outputs[0].text
+
+        if not text:
+            print("⚠️ No text generated in the output.")
+
+        try:
+            # Attempt to extract JSON block within triple backticks
+            json_match = re.search(r"```json\n(.*?)\n```", text, re.DOTALL)
+            if not json_match:
+                # Attempt to extract JSON directly enclosed in curly brackets
+                json_match = re.search(r"({.*})", text, re.DOTALL)
+
+            if json_match:
+                json_string = json_match.group(1).strip()
+                response = json.loads(json_string)
+                try :
+                    explanation = response["explanation"]
+                    explanations.append(explanation)
+                except KeyError:
+                    print(f"⚠️ 'explanation' key not found in the response: {response}")
+            else:
+                print(f"⚠️ No JSON block found in the given text: {text}")
+
+        except json.JSONDecodeError:
+            print(f"⚠️ JSON parsing error in {text}")
+
+    return tuple(explanations[:3] + [None] * (3 - len(explanations)))
 
 
 def test_llm(model_name: str, temperature: float, top_p: float, max_tokens: int, repetition_penalty: float, max_model_len, fine_tuned=False):
@@ -182,3 +218,155 @@ def test_llm(model_name: str, temperature: float, top_p: float, max_tokens: int,
     # Final save after loop completion
     save_responses(responses, output_file)
 
+
+
+def test_llm_refiner(model_name: str, dataset:str, temperature: float, top_p: float, max_tokens: int, repetition_penalty: float, max_model_len, fine_tuned=False):
+    
+    print(f"Params list: {model_name}, {temperature}, {top_p}, {max_tokens}, {repetition_penalty}, {max_model_len}, {fine_tuned}")
+    set_full_reproducibility()
+    
+    LOWER_BOUND = 1
+    UPPER_BOUND = 200
+    name = model_name
+    global prompt
+    global prompt_ref
+    base_prompt = prompt
+    base_prompt_ref = prompt_ref
+    model_name = MODEL_MAPPING[model_name]
+
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    sampling_params = SamplingParams(
+        temperature=temperature, 
+        top_p=top_p, 
+        repetition_penalty=repetition_penalty, 
+        max_tokens=max_tokens, 
+        top_k=10,
+        stop=tokenizer.eos_token
+    )
+
+    worker_llm = LLM(
+        model="unsloth/Qwen2.5-0.5B-Instruct", 
+        gpu_memory_utilization=0.96, 
+        max_model_len=max_model_len, 
+        max_num_seqs=1,
+        enable_lora=True
+    )
+
+    # Initialize LLM with optimized GPU memory usage
+    if fine_tuned:
+        llm = LLM(
+        model=model_name, 
+        gpu_memory_utilization=0.8, 
+        max_model_len=max_model_len, 
+        max_num_seqs=1,
+        enable_lora=True
+    )
+    else:
+        llm = LLM(
+            model=model_name, 
+            gpu_memory_utilization=0.8, 
+            max_model_len=max_model_len, 
+            max_num_seqs=1
+        )
+    
+
+    from vllm.lora.request import LoRARequest
+
+    lora_checkpoint_directory_path = f"outputs_unsloth_{dataset}_Refiner/{name}/checkpoint-500"
+
+    # Define output file for results
+    responses = {}  # Dictionary to store new responses
+
+    # Load counterfactual data
+    with open(f"src/explainer/test_counterfactuals.json", 'r', encoding='utf-8') as file1:
+        data1 = json.load(file1)
+
+    i = 0  # Counter for responses
+
+    for dataset_name, examples in data1.items():
+
+        if dataset_name.lower() == dataset:
+            output_file = f"data/results/{model_name.split('/')[-1]}_Response_{dataset_name}_Refiner_Finetuned_{fine_tuned}.json"
+
+            for index, values in examples.items():
+                for counterfactual in values["counterfactuals"]:
+                    
+                    if LOWER_BOUND <= i <= UPPER_BOUND:
+                        
+                        current_prompt_worker = base_prompt.format(
+                            dataset_description=dataset_kb[dataset_name], 
+                            factual_example=str(values["factual"]), 
+                            counterfactual_example=str(counterfactual)
+                        )
+
+                        messages = [{"role": "user", "content": current_prompt_worker}]
+                        
+                        text = tokenizer.apply_chat_template(
+                            messages,
+                            tokenize=False,
+                            add_generation_prompt=True
+                        )
+                        # Generate explanations using the worker LLM
+                        N = 3
+                        explanations = []
+                        for j in range(N):
+                            try:
+                                with torch.no_grad():
+                                    start = time.time()
+                                    outputs = worker_llm.generate([text], sampling_params=sampling_params, lora_request=LoRARequest("counterfactual_explainability_adapter", 1, lora_checkpoint_directory_path))
+                                    explanations.append(outputs)
+                                    end = time.time()
+                            except AssertionError as assert_e:
+                                print(f"🚨 Assertion error: {assert_e}")
+                                continue
+                        
+                        explanation1, explanation2, explanation3 = extract_explanations(explanations)
+
+                        current_prompt_refiner = base_prompt_ref.format(
+                            dataset_description=dataset_kb[dataset_name], 
+                            factual_example=str(values["factual"]), 
+                            counterfactual_example=str(counterfactual),
+                            draft_explanation_1=explanation1,
+                            draft_explanation_2=explanation2,
+                            draft_explanation_3=explanation3
+                        )
+
+                        messages = [{"role": "user", "content": current_prompt_refiner}]
+
+                        text = tokenizer.apply_chat_template(
+                            messages,
+                            tokenize=False,
+                            add_generation_prompt=True
+                        )
+
+                        try:
+                            with torch.no_grad():
+                                start = time.time()
+                                outputs = llm.generate([text], sampling_params=sampling_params)
+                                end = time.time()
+                        except AssertionError as assert_e:
+                            print(f"🚨 Assertion error: {assert_e}")
+                            continue
+                        
+                        # Process the outputs if generated successfully
+                        for output in outputs:
+                            prompt = output.prompt
+                            generated_text = output.outputs[0].text
+
+                        print(generated_text)
+                        responses[i] = {"generated_text": generated_text, "prompt": prompt, "ground_truth": {"counterfactual":counterfactual, "factual": values["factual"]}, "changes": extract_feature_changes(values["factual"], counterfactual)}
+                        
+
+                        print(f"#################### Time taken: {end - start:.2f} seconds, explanation number {i} ###########################")
+
+                        # Save every 10 responses
+                        if i % 10 == 0:
+                            save_responses(responses, output_file)
+                            responses = {}  # Clear the temporary dictionary to prevent duplication
+
+                        # Delete large variables to free memory
+                        del generated_text
+                        del outputs
+                    i += 1
+    # Final save after loop completion
+    save_responses(responses, output_file)

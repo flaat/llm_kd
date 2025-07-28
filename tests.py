@@ -212,7 +212,7 @@ def main(model_name: str, dataset: str) -> None:
     model, tokenizer = load_model_and_tokenizer(model_name)
     
     # Load dataset
-    json_file_path = f"/home/hl-turing/VSCodeProjects/Flavio/llm-graph-cf/data/{dataset}.json"
+    json_file_path = f"data/{dataset}_Refiner.json"
     dataset = load_json_to_hf_dataset(json_file_path)
     
     # Create formatting function and process dataset
@@ -220,7 +220,7 @@ def main(model_name: str, dataset: str) -> None:
     formatted_dataset = dataset.map(formatting_func, batched=False)
     
     # Prepare output directory
-    output_dir = f"outputs_unsloth_diabete/{model_name}"
+    output_dir = f"outputs_unsloth_{dataset}_Refiner/{model_name}"
     os.makedirs(output_dir, exist_ok=True)
     
     # Set up trainer
