@@ -201,7 +201,7 @@ def print_memory_stats(start_gpu_memory: float, trainer_stats: Optional[Any] = N
         print(f"Peak reserved memory for training % of max memory = {lora_percentage} %.")
 
 
-def main(model_name: str, dataset: str) -> None:
+def main(model_name: str, dataset_name: str, refiner: bool) -> None:
     """
     Main function to execute the fine-tuning pipeline.
     
@@ -212,7 +212,10 @@ def main(model_name: str, dataset: str) -> None:
     model, tokenizer = load_model_and_tokenizer(model_name)
     
     # Load dataset
-    json_file_path = f"/home/hl-turing/VSCodeProjects/Flavio/llm-graph-cf/data/{dataset}.json"
+    if refiner:
+        json_file_path = f"data/{dataset_name}_Refiner_cleaned.json"
+    else:
+        json_file_path = f"data/{dataset}.json"
     dataset = load_json_to_hf_dataset(json_file_path)
     
     # Create formatting function and process dataset
@@ -220,7 +223,11 @@ def main(model_name: str, dataset: str) -> None:
     formatted_dataset = dataset.map(formatting_func, batched=False)
     
     # Prepare output directory
-    output_dir = f"outputs_unsloth_diabete/{model_name}"
+
+    if refiner:
+        output_dir = f"outputs_unsloth_{dataset_name}_refiner/{model_name}"
+    else:
+        output_dir = f"outputs_unsloth_{dataset_name}/{model_name}"
     os.makedirs(output_dir, exist_ok=True)
     
     # Set up trainer
@@ -251,5 +258,10 @@ if __name__ == "__main__":
         default='titanic',
         help='Dataset name to use for fine-tuning (default: titanic)'
     )
+    parser.add_argument(
+        '--refiner',
+        action='store_true',
+        help='Use this flag to indicate that the dataset is a refiner dataset (default: False)'
+    )
     args = parser.parse_args()
-    main(args.model_name, args.dataset)
+    main(args.model_name, args.dataset, args.refiner)
