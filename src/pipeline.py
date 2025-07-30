@@ -10,6 +10,7 @@ import os
 from data.dataset_kb import dataset_kb
 from .utils import MODEL_MAPPING, prompt, prompt_ref
 import re
+from vllm.lora.request import LoRARequest
 
 def set_full_reproducibility(seed=42):
     random.seed(seed)
@@ -145,9 +146,7 @@ def test_llm(model_name: str, temperature: float, top_p: float, max_tokens: int,
             max_model_len=max_model_len, 
             max_num_seqs=1
         )
-    
 
-    from vllm.lora.request import LoRARequest
 
     lora_checkpoint_directory_path = f"outputs_unsloth_titanic/{name}/checkpoint-500"
 
@@ -220,59 +219,68 @@ def test_llm(model_name: str, temperature: float, top_p: float, max_tokens: int,
 
 
 
-def test_llm_refiner(model_name: str, dataset:str, temperature: float, top_p: float, max_tokens: int, repetition_penalty: float, max_model_len, fine_tuned=False):
-    
-    print(f"Params list: {model_name}, {temperature}, {top_p}, {max_tokens}, {repetition_penalty}, {max_model_len}, {fine_tuned}")
+def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:str, temperature: float, top_p: float, max_tokens: int, repetition_penalty: float, max_model_len, fine_tuned=False):
+
+    print(f"Params list: {worker_model_name}, {refiner_model_name}, {temperature}, {top_p}, {max_tokens}, {repetition_penalty}, {max_model_len}, {fine_tuned}")
     set_full_reproducibility()
     
     LOWER_BOUND = 1
     UPPER_BOUND = 200
-    name = model_name
+    worker_name = worker_model_name
+    refiner_name = refiner_model_name
     global prompt
     global prompt_ref
     base_prompt = prompt
     base_prompt_ref = prompt_ref
-    model_name = MODEL_MAPPING[model_name]
+    worker_model_name = MODEL_MAPPING[worker_model_name]
+    refiner_model_name = MODEL_MAPPING[refiner_model_name]
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    sampling_params = SamplingParams(
+    tokenizer_worker = AutoTokenizer.from_pretrained(worker_model_name)
+    tokenizer_refiner = AutoTokenizer.from_pretrained(refiner_model_name)
+    sampling_params_worker = SamplingParams(
         temperature=temperature, 
         top_p=top_p, 
         repetition_penalty=repetition_penalty, 
         max_tokens=max_tokens, 
         top_k=10,
-        stop=tokenizer.eos_token
+        stop=tokenizer_worker.eos_token
+    )
+    sampling_params_refiner = SamplingParams(
+        temperature=temperature, 
+        top_p=top_p, 
+        repetition_penalty=repetition_penalty,
+        max_tokens=max_tokens,
+        top_k=10,
+        stop=tokenizer_refiner.eos_token
     )
 
     worker_llm = LLM(
-        model="unsloth/Qwen2.5-0.5B-Instruct", 
+        model=worker_model_name, 
         gpu_memory_utilization=0.96, 
         max_model_len=max_model_len, 
         max_num_seqs=1,
         enable_lora=True
     )
 
-    # Initialize LLM with optimized GPU memory usage
     if fine_tuned:
-        llm = LLM(
-        model=model_name, 
+        refiner_llm = LLM(
+        model=refiner_model_name, 
         gpu_memory_utilization=0.8, 
         max_model_len=max_model_len, 
         max_num_seqs=1,
         enable_lora=True
     )
     else:
-        llm = LLM(
-            model=model_name, 
+        refiner_llm = LLM(
+            model=refiner_model_name, 
             gpu_memory_utilization=0.8, 
             max_model_len=max_model_len, 
             max_num_seqs=1
         )
     
 
-    from vllm.lora.request import LoRARequest
-
-    lora_checkpoint_directory_path = f"outputs_unsloth_{dataset}_Refiner/{name}/checkpoint-500"
+    lora_checkpoint_directory_path_worker = f"outputs_unsloth_{dataset}/{worker_name}/checkpoint-500"
+    lora_checkpoint_directory_path_refiner = f"outputs_unsloth_{dataset}_Refiner/{refiner_name}/checkpoint-500"
 
     # Define output file for results
     responses = {}  # Dictionary to store new responses
@@ -286,7 +294,7 @@ def test_llm_refiner(model_name: str, dataset:str, temperature: float, top_p: fl
     for dataset_name, examples in data1.items():
 
         if dataset_name.lower() == dataset:
-            output_file = f"data/results/{model_name.split('/')[-1]}_Response_{dataset_name}_Refiner_Finetuned_{fine_tuned}.json"
+            output_file = f"data/results/Worker_{worker_model_name.split('/')[-1]}_Refiner_{refiner_model_name.split('/')[-1]}_Response_{dataset_name}_Finetuned_{fine_tuned}.json"
 
             for index, values in examples.items():
                 for counterfactual in values["counterfactuals"]:
@@ -300,8 +308,8 @@ def test_llm_refiner(model_name: str, dataset:str, temperature: float, top_p: fl
                         )
 
                         messages = [{"role": "user", "content": current_prompt_worker}]
-                        
-                        text = tokenizer.apply_chat_template(
+                        # Tokenize the messages for the worker LLM
+                        text = tokenizer_worker.apply_chat_template(
                             messages,
                             tokenize=False,
                             add_generation_prompt=True
@@ -309,11 +317,11 @@ def test_llm_refiner(model_name: str, dataset:str, temperature: float, top_p: fl
                         # Generate explanations using the worker LLM
                         N = 3
                         explanations = []
-                        for j in range(N):
+                        for _ in range(N):
                             try:
                                 with torch.no_grad():
                                     start = time.time()
-                                    outputs = worker_llm.generate([text], sampling_params=sampling_params, lora_request=LoRARequest("counterfactual_explainability_adapter", 1, lora_checkpoint_directory_path))
+                                    outputs = worker_llm.generate([text], sampling_params=sampling_params_worker, lora_request=LoRARequest("counterfactual_explainability_adapter", 1, lora_checkpoint_directory_path_worker))
                                     explanations.append(outputs)
                                     end = time.time()
                             except AssertionError as assert_e:
@@ -333,7 +341,7 @@ def test_llm_refiner(model_name: str, dataset:str, temperature: float, top_p: fl
 
                         messages = [{"role": "user", "content": current_prompt_refiner}]
 
-                        text = tokenizer.apply_chat_template(
+                        text = tokenizer_refiner.apply_chat_template(
                             messages,
                             tokenize=False,
                             add_generation_prompt=True
@@ -342,7 +350,7 @@ def test_llm_refiner(model_name: str, dataset:str, temperature: float, top_p: fl
                         try:
                             with torch.no_grad():
                                 start = time.time()
-                                outputs = llm.generate([text], sampling_params=sampling_params)
+                                outputs = refiner_llm.generate([text], sampling_params=sampling_params_refiner, lora_request=LoRARequest("counterfactual_explainability_adapter", 1, lora_checkpoint_directory_path_refiner))
                                 end = time.time()
                         except AssertionError as assert_e:
                             print(f"🚨 Assertion error: {assert_e}")

@@ -2,6 +2,7 @@
 __pycache__
 figures
 *.json
+.DS_Store
 outputs
 pippo.py
 pippo2.py

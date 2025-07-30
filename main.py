@@ -32,12 +32,19 @@ def parse_arguments() -> argparse.Namespace:
 
     # Model configuration parameters
     parser.add_argument(
-        '--model_name',
+        '--worker_model_name',
         type=str,
         default='phi_4B',
-        help='Model name to use for experiments (default: phi_4B)'
+        help='Worker model name to use for experiments (default: phi_4B)'
     )
-    
+
+    parser.add_argument(
+        '--refiner_model_name',
+        type=str,
+        default='phi_4B',
+        help='Refiner model name to use for experiments (default: phi_4B)'
+    )
+
     parser.add_argument(
         '--max_model_len',
         type=int,
@@ -144,7 +151,8 @@ def main() -> None:
     if args.test_llm:
         if args.refiner:
             test_llm_refiner(
-                model_name=args.model_name,
+                worker_model_name=args.worker_model_name,
+                refiner_model_name=args.refiner_model_name,
                 dataset=args.dataset,
                 temperature=args.temperature,
                 top_p=args.top_p,
@@ -155,7 +163,7 @@ def main() -> None:
             )
         else:
             test_llm(
-                model_name=args.model_name,
+                model_name=args.worker_model_name,
                 temperature=args.temperature,
                 top_p=args.top_p,
                 max_tokens=args.max_tokens,
