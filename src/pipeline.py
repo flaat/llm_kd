@@ -254,33 +254,8 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
         stop=tokenizer_refiner.eos_token
     )
 
-    worker_llm = LLM(
-        model=worker_model_name, 
-        gpu_memory_utilization=0.96, 
-        max_model_len=max_model_len, 
-        max_num_seqs=1,
-        enable_lora=True
-    )
-
-    if fine_tuned:
-        refiner_llm = LLM(
-        model=refiner_model_name, 
-        gpu_memory_utilization=0.8, 
-        max_model_len=max_model_len, 
-        max_num_seqs=1,
-        enable_lora=True
-    )
-    else:
-        refiner_llm = LLM(
-            model=refiner_model_name, 
-            gpu_memory_utilization=0.8, 
-            max_model_len=max_model_len, 
-            max_num_seqs=1
-        )
-    
-
     lora_checkpoint_directory_path_worker = f"outputs_unsloth_{dataset}/{worker_name}/checkpoint-500"
-    lora_checkpoint_directory_path_refiner = f"outputs_unsloth_{dataset}_Refiner/{refiner_name}/checkpoint-500"
+    lora_checkpoint_directory_path_refiner = f"outputs_unsloth_{dataset}_refiner/{refiner_name}/checkpoint-800"
 
     # Define output file for results
     responses = {}  # Dictionary to store new responses
@@ -290,11 +265,11 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
         data1 = json.load(file1)
 
     i = 0  # Counter for responses
+    output_file = f"data/results/Worker_{worker_model_name.split('/')[-1]}_Refiner_{refiner_model_name.split('/')[-1]}_Response_{dataset}_Finetuned_{fine_tuned}.json"
 
     for dataset_name, examples in data1.items():
 
         if dataset_name.lower() == dataset:
-            output_file = f"data/results/Worker_{worker_model_name.split('/')[-1]}_Refiner_{refiner_model_name.split('/')[-1]}_Response_{dataset_name}_Finetuned_{fine_tuned}.json"
 
             for index, values in examples.items():
                 for counterfactual in values["counterfactuals"]:
@@ -314,6 +289,13 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
                             tokenize=False,
                             add_generation_prompt=True
                         )
+                        worker_llm = LLM(
+                            model=worker_model_name, 
+                            gpu_memory_utilization=0.85, 
+                            max_model_len=max_model_len, 
+                            max_num_seqs=1,
+                            enable_lora=True
+                        )
                         # Generate explanations using the worker LLM
                         N = 3
                         explanations = []
@@ -321,7 +303,7 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
                             try:
                                 with torch.no_grad():
                                     start = time.time()
-                                    outputs = worker_llm.generate([text], sampling_params=sampling_params_worker, lora_request=LoRARequest("counterfactual_explainability_adapter", 1, lora_checkpoint_directory_path_worker))
+                                    outputs = worker_llm.generate([text], sampling_params=sampling_params_worker, lora_request=LoRARequest("counterfactual_explainability_adapter_worker", 1, lora_checkpoint_directory_path_worker))
                                     explanations.append(outputs)
                                     end = time.time()
                             except AssertionError as assert_e:
@@ -329,6 +311,10 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
                                 continue
                         
                         explanation1, explanation2, explanation3 = extract_explanations(explanations)
+
+                        # Delete the worker LLM to free memory
+                        del worker_llm
+                        torch.cuda.empty_cache()
 
                         current_prompt_refiner = base_prompt_ref.format(
                             dataset_description=dataset_kb[dataset_name], 
@@ -347,15 +333,35 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
                             add_generation_prompt=True
                         )
 
+                        if fine_tuned:
+                            refiner_llm = LLM(
+                                model=refiner_model_name, 
+                                gpu_memory_utilization=0.85, 
+                                max_model_len=max_model_len, 
+                                max_num_seqs=1,
+                                enable_lora=True
+                            )
+                        else:
+                            refiner_llm = LLM(
+                                model=refiner_model_name, 
+                                gpu_memory_utilization=0.85, 
+                                max_model_len=max_model_len, 
+                                max_num_seqs=1
+                            )
+
                         try:
                             with torch.no_grad():
                                 start = time.time()
-                                outputs = refiner_llm.generate([text], sampling_params=sampling_params_refiner, lora_request=LoRARequest("counterfactual_explainability_adapter", 1, lora_checkpoint_directory_path_refiner))
+                                outputs = refiner_llm.generate([text], sampling_params=sampling_params_refiner, lora_request=LoRARequest("counterfactual_explainability_adapter_refiner", 2, lora_checkpoint_directory_path_refiner))
                                 end = time.time()
                         except AssertionError as assert_e:
                             print(f"🚨 Assertion error: {assert_e}")
                             continue
-                        
+
+                        # Delete the refiner LLM to free memory
+                        del refiner_llm
+                        torch.cuda.empty_cache()
+
                         # Process the outputs if generated successfully
                         for output in outputs:
                             prompt = output.prompt

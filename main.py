@@ -119,7 +119,8 @@ def display_config(args: argparse.Namespace) -> None:
         args: Parsed command-line arguments
     """
     print("\n========== EXPERIMENT CONFIGURATION ==========")
-    print(f"Model name:          {args.model_name}")
+    print(f"Worker model name:   {args.worker_model_name}")
+    print(f"Refiner model name:  {args.refiner_model_name}")
     print(f"Model context length: {args.max_model_len}")
     print(f"Using fine-tuned:    {'Yes' if args.fine_tuned else 'No'}")
     print(f"Using refiner:      {'Yes' if args.refiner else 'No'}")

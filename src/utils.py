@@ -38,10 +38,10 @@ MODEL_MAPPING = {
     "deepseek_r1_qwen_3B": "deepseek-ai/DeepSeek-R1-Distill-Qwen-3B",
     "deepseek_r1_qwen_7B": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
     
-    "unsloth_deepseek_r1_qwen_1.5B": "unsloth/DeepSeek-R1-Distill-Qwen-1.5B",
-    "unsloth_deepseek_r1_qwen_7B": "unsloth/DeepSeek-R1-Distill-Qwen-7B",
-    "unsloth_qwen_0.5B": "unsloth/Qwen2.5-0.5B-Instruct",
-    "unsloth_qwen_3B": "unsloth/Qwen2.5-3B-Instruct"
+    "unsloth_deepseek_r1_qwen_1.5B": "unsloth/DeepSeek-R1-Distill-Qwen-1.5B",   #used in the paper
+    "unsloth_deepseek_r1_qwen_7B": "unsloth/DeepSeek-R1-Distill-Qwen-7B",   #used in the paper
+    "unsloth_qwen_0.5B": "unsloth/Qwen2.5-0.5B-Instruct",   #used in the paper
+    "unsloth_qwen_3B": "unsloth/Qwen2.5-3B-Instruct"    #used in the paper
 
 }
 
