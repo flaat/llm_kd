@@ -302,10 +302,10 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
                         for _ in range(N):
                             try:
                                 with torch.no_grad():
-                                    start = time.time()
+                                    #start = time.time()
                                     outputs = worker_llm.generate([text], sampling_params=sampling_params_worker, lora_request=LoRARequest("counterfactual_explainability_adapter_worker", 1, lora_checkpoint_directory_path_worker))
                                     explanations.append(outputs)
-                                    end = time.time()
+                                    #end = time.time()
                             except AssertionError as assert_e:
                                 print(f"🚨 Assertion error: {assert_e}")
                                 continue
@@ -351,9 +351,14 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
 
                         try:
                             with torch.no_grad():
-                                start = time.time()
-                                outputs = refiner_llm.generate([text], sampling_params=sampling_params_refiner, lora_request=LoRARequest("counterfactual_explainability_adapter_refiner", 2, lora_checkpoint_directory_path_refiner))
-                                end = time.time()
+                                if fine_tuned:
+                                    start = time.time()
+                                    outputs = refiner_llm.generate([text], sampling_params=sampling_params_refiner, lora_request=LoRARequest("counterfactual_explainability_adapter_refiner", 2, lora_checkpoint_directory_path_refiner))
+                                    end = time.time()
+                                else:
+                                    start = time.time()
+                                    outputs = refiner_llm.generate([text], sampling_params=sampling_params_refiner)
+                                    end = time.time()
                         except AssertionError as assert_e:
                             print(f"🚨 Assertion error: {assert_e}")
                             continue
