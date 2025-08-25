@@ -269,6 +269,9 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
 
     for dataset_name, examples in data1.items():
 
+        if dataset == "adult":
+            dataset = "adult income"
+
         if dataset_name.lower() == dataset:
 
             for index, values in examples.items():
