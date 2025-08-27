@@ -2,7 +2,9 @@
 
 This project explores **two narrative generation pipelines** for Narrative Explainable AI:  
 1. **Direct pipeline** – a Small Language Model (SLM) is fine-tuned to generate narratives directly from counterfactuals.  
-2. **Multi-Narrative Refinement pipeline** – two SLMs are trained for two stages: first to produce multiple draft narratives (from the direct pipeline), then to refine them into a coherent explanation (refinement step).  
+2. **Multi-Narrative Refinement pipeline** – two SLMs are trained for two stages: first to produce multiple draft narratives (from the direct pipeline), then to refine them into a coherent explanation (refinement step).
+
+![Pipelines](https://github.com/flaat/llm_kd/blob/623a8e89c5536fb3914170dd6a69f0d747509c01/data/pipelines.png)
 
 
 ## Requirements
