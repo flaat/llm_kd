@@ -6,6 +6,8 @@ This project explores **two narrative generation pipelines** for Narrative Expla
 
 ![Pipelines](https://github.com/flaat/llm_kd/blob/06e40be90857a079eea6073bb6a4b22e7e13f2b2/data/pipelines_2.png)
 
+The datasets were **synthetically generated with a Large Language Model (LLM)** and then distilled into SLMs through fine-tuning.
+
 
 ## Requirements
 
@@ -39,6 +41,5 @@ python src/evaluate_with_refiner.py
 ```
 
 ## Data Folder
-The datasets were **synthetically generated with a Large Language Model (LLM)** and then distilled into SLMs through fine-tuning.
 To download the datasets please use this link: https://huggingface.co/datasets/Anon30241/model_kd_llm
 
