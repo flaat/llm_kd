@@ -1,47 +1,52 @@
 MODEL_MAPPING = {
-    "phi_4B": "microsoft/Phi-3.5-mini-instruct",  # 128k
-    "phi_7B": "microsoft/Phi-3-small-128k-instruct",  # 128k
-    "phi_14B": "microsoft/Phi-3-medium-128k-instruct",  # 128k
-    "phi_14B_Q8_GGUF": "ssmits/Phi-3-medium-128k-instruct-Q8_0-GGUF",  # 128k
-    "mistral_7B": "mistralai/Mistral-7B-Instruct-v0.3",  # 32k
-    "smollm2_2B": "HuggingFaceTB/SmolLM2-1.7B-Instruct",  # 8k
-    "llama_8B": "meta-llama/Llama-3.1-8B-Instruct",  # 128k
-    "llama_3B": "meta-llama/Llama-3.2-3B-Instruct",  # 128k
-    "qwen_0.5B": "Qwen/Qwen2.5-0.5B-Instruct",  # 128k
-    "qwen_1.5B": "Qwen/Qwen2.5-1.5B-Instruct",  # 128k
-    "qwen_3B": "Qwen/Qwen2.5-3B-Instruct",  # 128k
-    "qwen_7B": "Qwen/Qwen2.5-7B-Instruct",  # 128k
-    "qwen_14B": "Qwen/Qwen2.5-14B-Instruct",  # 128k
-    "qwen_32B": "Qwen/Qwen2.5-32B-Instruct",  # 128k
-    "qwen_72B": "Qwen/Qwen2.5-72B-Instruct",  # 128k
-
-    "qwen_0.5B_Q8_GPTQ": "Qwen/Qwen2.5-0.5B-Instruct-GPTQ-Int8",  # 128k
-    "qwen_1.5B_Q8_GPTQ": "Qwen/Qwen2.5-1.5B-Instruct-GPTQ-Int8",  # 128k
-    "qwen_3BQ_Q8_GPTQ": "Qwen/Qwen2.5-3B-Instruct-GPTQ-Int8",  # 128k
-    "qwen_7BQ_Q8_GPTQ": "Qwen/Qwen2.5-7B-Instruct-GPTQ-Int8",  # 128k
-    "qwen_14BQ_Q8_GPTQ": "Qwen/Qwen2.5-14B-Instruct-GPTQ-Int8",  # 128k
-    "qwen_32BQ_Q8_GPTQ": "Qwen/Qwen2.5-32B-Instruct-GPTQ-Int8",  # 128k
-    "qwen_72BQ_Q8_GPTQ": "Qwen/Qwen2.5-72B-Instruct-GPTQ-Int8",  # 128k
-    
-    "qwen_0.5B_Q4_GPTQ": "Qwen/Qwen2.5-0.5B-Instruct-GPTQ-Int4",  # 128k
-    "qwen_1.5B_Q4_GPTQ": "Qwen/Qwen2.5-1.5B-Instruct-GPTQ-Int4",  # 128k
-    "qwen_3BQ_Q4_GPTQ": "Qwen/Qwen2.5-3B-Instruct-GPTQ-Int4",  # 128k
-    "qwen_7BQ_Q4_GPTQ": "Qwen/Qwen2.5-7B-Instruct-GPTQ-Int4",  # 128k
-    "qwen_14BQ_Q4_GPTQ": "Qwen/Qwen2.5-14B-Instruct-GPTQ-Int4",  # 128k
-    "qwen_32BQ_Q4_GPTQ": "Qwen/Qwen2.5-32B-Instruct-GPTQ-Int4",  # 128k
-    "qwen_72BQ_Q4_GPTQ": "Qwen/Qwen2.5-72B-Instruct-GPTQ-Int4",  # 128k
-
+    # microsoft phi
+    "phi_4B": "microsoft/Phi-3.5-mini-instruct",  
+    "phi_7B": "microsoft/Phi-3-small-128k-instruct",  
+    "phi_14B": "microsoft/Phi-3-medium-128k-instruct",  
+    "phi_14B_Q8_GGUF": "ssmits/Phi-3-medium-128k-instruct-Q8_0-GGUF",  
+    # mistral
+    "mistral_7B": "mistralai/Mistral-7B-Instruct-v0.3",  
+    # smollm2
+    "smollm2_2B": "HuggingFaceTB/SmolLM2-1.7B-Instruct",  
+    # llama
+    "llama_8B": "meta-llama/Llama-3.1-8B-Instruct",  
+    "llama_3B": "meta-llama/Llama-3.2-3B-Instruct",  
+    # qwen
+    "qwen_0.5B": "Qwen/Qwen2.5-0.5B-Instruct",  
+    "qwen_1.5B": "Qwen/Qwen2.5-1.5B-Instruct",  
+    "qwen_3B": "Qwen/Qwen2.5-3B-Instruct",  
+    "qwen_7B": "Qwen/Qwen2.5-7B-Instruct",  
+    "qwen_14B": "Qwen/Qwen2.5-14B-Instruct",  
+    "qwen_32B": "Qwen/Qwen2.5-32B-Instruct",  
+    # qwen gptq-int8
+    "qwen_0.5B_Q8_GPTQ": "Qwen/Qwen2.5-0.5B-Instruct-GPTQ-Int8",  
+    "qwen_1.5B_Q8_GPTQ": "Qwen/Qwen2.5-1.5B-Instruct-GPTQ-Int8",  
+    "qwen_3BQ_Q8_GPTQ": "Qwen/Qwen2.5-3B-Instruct-GPTQ-Int8",  
+    "qwen_7BQ_Q8_GPTQ": "Qwen/Qwen2.5-7B-Instruct-GPTQ-Int8",  
+    "qwen_14BQ_Q8_GPTQ": "Qwen/Qwen2.5-14B-Instruct-GPTQ-Int8",  
+    "qwen_32BQ_Q8_GPTQ": "Qwen/Qwen2.5-32B-Instruct-GPTQ-Int8",  
+    # qwen gptq-int4
+    "qwen_0.5B_Q4_GPTQ": "Qwen/Qwen2.5-0.5B-Instruct-GPTQ-Int4",  
+    "qwen_1.5B_Q4_GPTQ": "Qwen/Qwen2.5-1.5B-Instruct-GPTQ-Int4",  
+    "qwen_3BQ_Q4_GPTQ": "Qwen/Qwen2.5-3B-Instruct-GPTQ-Int4",  
+    "qwen_7BQ_Q4_GPTQ": "Qwen/Qwen2.5-7B-Instruct-GPTQ-Int4",  
+    "qwen_14BQ_Q4_GPTQ": "Qwen/Qwen2.5-14B-Instruct-GPTQ-Int4",  
+    "qwen_32BQ_Q4_GPTQ": "Qwen/Qwen2.5-32B-Instruct-GPTQ-Int4",  
+    # deepseek r1 qwen awq
     "deepseek_r1_qwen_32B_Q4_AWQ1": "inarikami/DeepSeek-R1-Distill-Qwen-32B-AWQ",    #used in the paper
     "deepseek_r1_qwen_32B_Q4_AWQ2": "Valdemardi/DeepSeek-R1-Distill-Qwen-32B-AWQ",
     "deepseek_r1_qwen_32B_Q4_GPTQ": "numen-tech/DeepSeek-R1-Distill-Qwen-32B-GPTQ-Int4", 
     "deepseek_r1_qwen_32B": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
     "deepseek_r1_qwen_3B": "deepseek-ai/DeepSeek-R1-Distill-Qwen-3B",
     "deepseek_r1_qwen_7B": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
-    
+    # unsloth deepseek r1 qwen
     "unsloth_deepseek_r1_qwen_1.5B": "unsloth/DeepSeek-R1-Distill-Qwen-1.5B",   #used in the paper
     "unsloth_deepseek_r1_qwen_7B": "unsloth/DeepSeek-R1-Distill-Qwen-7B",   #used in the paper
     "unsloth_qwen_0.5B": "unsloth/Qwen2.5-0.5B-Instruct",   #used in the paper
-    "unsloth_qwen_3B": "unsloth/Qwen2.5-3B-Instruct"    #used in the paper
+    "unsloth_qwen_3B": "unsloth/Qwen2.5-3B-Instruct",    #used in the paper
+    # qwen3
+    "qwen3_30B_A3B": "QuantTrio/Qwen3-30B-A3B-Thinking-2507-AWQ",
+    "qwen3_32B": "Qwen/Qwen3-32B-AWQ"
 
 }
 
@@ -128,7 +133,7 @@ Please avoid any further explanation, clarification or other unnecessary outputs
 ### Factual Example ###
 {factual_example}
 
-### Counterfactual Example ###
+### Counterfactual Examplele ###
 {counterfactual_example}
 
 ### Draft Explanation 1 ###
