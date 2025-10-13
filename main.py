@@ -108,6 +108,12 @@ def parse_arguments() -> argparse.Namespace:
         help='Run LLM testing pipeline'
     )
 
+    parser.add_argument(
+        '--analyze_feasibility',
+        action='store_true',
+        help='Analyze the feasibility of the LLM for the given task'
+    )
+
     return parser.parse_args()
 
 
@@ -124,6 +130,7 @@ def display_config(args: argparse.Namespace) -> None:
     print(f"Model context length: {args.max_model_len}")
     print(f"Using fine-tuned:    {'Yes' if args.fine_tuned else 'No'}")
     print(f"Using refiner:      {'Yes' if args.refiner else 'No'}")
+    print(f"Analyzing feasibility: {'Yes' if args.analyze_feasibility else 'No'}")
     print("\n----- Generation Parameters -----")
     print(f"Temperature:         {args.temperature}")
     print(f"Top-p:               {args.top_p}")
@@ -160,17 +167,20 @@ def main() -> None:
                 max_tokens=args.max_tokens,
                 repetition_penalty=args.repetition_penalty,
                 max_model_len=args.max_model_len,
-                fine_tuned=args.fine_tuned
+                fine_tuned=args.fine_tuned,
+                analyze_feasibility=args.analyze_feasibility
             )
         else:
             test_llm(
                 model_name=args.worker_model_name,
+                dataset=args.dataset,
                 temperature=args.temperature,
                 top_p=args.top_p,
                 max_tokens=args.max_tokens,
                 repetition_penalty=args.repetition_penalty,
                 max_model_len=args.max_model_len,
-                fine_tuned=args.fine_tuned
+                fine_tuned=args.fine_tuned,
+                analyze_feasibility=args.analyze_feasibility
             )
     # Additional experiment types can be added here as elif branches
 

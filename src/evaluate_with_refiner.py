@@ -26,7 +26,13 @@ def extract_and_parse_json(text, file):
 def merge_dicts(dict_list):
     result = {}
     reasonings = {}
+    # Se dict_list è un dizionario, convertilo in una lista di dizionari
+    if isinstance(dict_list, dict):
+        dict_list = [dict_list]
     for d in dict_list:
+        if not isinstance(d, dict):
+            print(f"⚠️ Elemento non dizionario trovato: {d}")
+            continue
         for key, value in d.items():
             if key == 'reasoning':
                 continue
@@ -50,8 +56,8 @@ def parse_filename(file_name, is_refiner):
 
 if __name__ == '__main__':  
     results_dirs = [
-        ("data/results/evaluation_titanic/", False),
-        ("data/results/evaluation_titanic_refiner/", True)
+        ("data/results/evaluation_adult/", False),
+        ("data/results/evaluation_adult_refiner/", True)
     ]
     output = "\\begin{table*}[htbp]\n \
     \\centering\n \
@@ -88,6 +94,7 @@ if __name__ == '__main__':
                     print(f"⚠️ Mismatch in feature changes length for {file1_path}.")
                     continue
                 elif not is_refiner and len(merged_dict["feature_changes"]) != len(changes["feature_changes"]) - 1:
+                    print(f"⚠️ Mismatch in feature changes length for {file1_path}.")
                     continue
                 for idx, element in enumerate(changes["feature_changes"]): 
                     for variable, dictionary in element.items():
@@ -125,7 +132,7 @@ if __name__ == '__main__':
             overall[model_key]["Std FF"][model_type] = stdv
             overall[model_key]["PFM"][model_type] = perfect_features_match/len(data)
             overall[model_key]["TF"][model_type] = total_target_correct/len(data)
-    with open('data/results/answers_with_refiner.json', 'w') as f:
+    with open('data/results/answers_with_refiner_adult.json', 'w') as f:
         json.dump(answers, f, indent=4)
     # Ordinamento per worker, poi refiner "---" prima
     sorted_keys = sorted(overall.keys(), key=lambda x: (x[0], x[1] == "---", x[1]))

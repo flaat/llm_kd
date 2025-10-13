@@ -53,7 +53,7 @@ def merge_dicts(dict_list):
 import statistics as stats
 if __name__ == '__main__':  
     # Define file paths
-    mypath = "data/results/evaluation_titanic_refiner/"
+    mypath = "data/results/evaluation_titanic/"
     from os import listdir
     from os.path import isfile, join
     onlyfiles = [f for f in listdir(mypath) if isfile(join(mypath, f))] 
