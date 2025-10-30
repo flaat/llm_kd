@@ -198,6 +198,7 @@ class EnergyMonitor:
         return {
             'energy_joules': total_energy,
             'average_power_watts': average_power,
+            'power_samples': self.power_samples,
             'duration_seconds': duration,
             'sample_count': len(self.power_samples)
         }
@@ -270,7 +271,7 @@ def test_llm(model_name: str, dataset: str, temperature: float, top_p: float, ma
     set_full_reproducibility()
     
     LOWER_BOUND = 1
-    UPPER_BOUND = 200
+    UPPER_BOUND = 100
     name = model_name
     global prompt
     base_prompt = prompt
@@ -338,7 +339,8 @@ def test_llm(model_name: str, dataset: str, temperature: float, top_p: float, ma
         "inference_time": [],
         "energy_consumption": [],
         "average_power": [],
-    }  
+        "power_samples": [],
+    }
 
     # Load counterfactual data
     with open(f"src/explainer/test_counterfactuals.json", 'r', encoding='utf-8') as file1:
@@ -399,7 +401,11 @@ def test_llm(model_name: str, dataset: str, temperature: float, top_p: float, ma
                         inference_time = end - start
                         energy_consumed = energy_metrics['energy_joules']
                         average_power = energy_metrics['average_power_watts']
-                        
+                        power_samples_tot = energy_metrics['power_samples']
+                        power_samples = []
+                        for j in range(len(power_samples_tot)):
+                            power_samples.append(power_samples_tot[j][1])
+
                         # Process the outputs if generated successfully
                         for output in outputs:
                             prompt = output.prompt
@@ -421,6 +427,7 @@ def test_llm(model_name: str, dataset: str, temperature: float, top_p: float, ma
                             feasibility["inference_time"].append(inference_time)
                             feasibility["energy_consumption"].append(energy_consumed)
                             feasibility["average_power"].append(average_power)
+                            feasibility["power_samples"].append(power_samples)
 
                         print(f"#################### explanation #{i} - Time taken: {inference_time:.2f}s, Energy: {energy_consumed:.2f}J, Avg Power: {average_power:.2f}W ###########################")
 
@@ -534,7 +541,7 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
         
         worker_llm_temp = LLM(
             model=worker_model_name, 
-            gpu_memory_utilization=0.4,  # Reduced to simulate simultaneous loading
+            gpu_memory_utilization=0.8,  
             max_model_len=max_model_len, 
             max_num_seqs=1,
             enable_lora=True
@@ -545,7 +552,9 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
         
         # Get GPU memory after worker model loading
         gpu_memory_after_worker = get_gpu_memory_usage()
-        
+
+        del worker_llm_temp
+
         # Calculate refiner model size
         log_capture_refiner = VLLMLogCapture()
         handler_refiner = log_capture_refiner.capture_logs()
@@ -556,7 +565,7 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
         if fine_tuned:
             refiner_llm_temp = LLM(
                 model=refiner_model_name, 
-                gpu_memory_utilization=0.85,  
+                gpu_memory_utilization=0.8,  
                 max_model_len=max_model_len, 
                 max_num_seqs=1,
                 enable_lora=True
@@ -564,7 +573,7 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
         else:
             refiner_llm_temp = LLM(
                 model=refiner_model_name, 
-                gpu_memory_utilization=0.85,  
+                gpu_memory_utilization=0.8,  
                 max_model_len=max_model_len, 
                 max_num_seqs=1
             )
@@ -584,8 +593,7 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
         print(f"📊 Combined model weight size: {combined_model_disk_size_gb:.4f} GB (Worker: {worker_model_disk_size_gb:.4f} GB + Refiner: {refiner_model_disk_size_gb:.4f} GB)")
         print(f"📊 Combined GPU memory usage: {combined_gpu_memory_usage_gb:.2f} GB")
         
-        # Clean up temporary models
-        del worker_llm_temp
+        # Clean up temporary model
         del refiner_llm_temp
         torch.cuda.empty_cache()
 
@@ -604,6 +612,7 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
             "inference_time": [],
             "energy_consumption": [],
             "average_power": [],
+            "power_samples": [],
         }
 
     # Load counterfactual data
@@ -653,6 +662,7 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
                         total_inference_time = 0.0
                         total_energy_consumed = 0.0
                         total_average_power = 0.0
+                        total_power_samples = []
                         
                         # Generate explanations using the worker LLM
                         N = 3
@@ -679,11 +689,17 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
                                         draft_inference_time = draft_end - draft_start
                                         draft_energy_consumed = energy_metrics['energy_joules']
                                         draft_average_power = energy_metrics['average_power_watts']
+                                        draft_power_samples_tot = energy_metrics['power_samples']
+                                        power_samples = []
+                                        for j in range(len(draft_power_samples_tot)):
+                                            power_samples.append(draft_power_samples_tot[j][1])
+
                                         
                                         total_inference_time += draft_inference_time
                                         total_energy_consumed += draft_energy_consumed
                                         total_average_power += draft_average_power
-                                        
+                                        total_power_samples.append(power_samples)
+
                                         print(f"Draft {draft_num + 1} - Time: {draft_inference_time:.2f}s, Energy: {draft_energy_consumed:.2f}J, Power: {draft_average_power:.2f}W")
                                         
                                         # Cleanup energy monitor
@@ -719,7 +735,7 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
                         if fine_tuned:
                             refiner_llm = LLM(
                                 model=refiner_model_name, 
-                                gpu_memory_utilization=0.85, 
+                                gpu_memory_utilization=0.8, 
                                 max_model_len=max_model_len, 
                                 max_num_seqs=1,
                                 enable_lora=True
@@ -727,7 +743,7 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
                         else:
                             refiner_llm = LLM(
                                 model=refiner_model_name, 
-                                gpu_memory_utilization=0.85, 
+                                gpu_memory_utilization=0.8, 
                                 max_model_len=max_model_len, 
                                 max_num_seqs=1
                             )
@@ -755,10 +771,16 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
                                     refiner_inference_time = refiner_end - refiner_start
                                     refiner_energy_consumed = energy_metrics['energy_joules']
                                     refiner_average_power = energy_metrics['average_power_watts']
+                                    refiner_power_samples_tot = energy_metrics['power_samples']
+                                    power_samples = []
+                                    for j in range(len(refiner_power_samples_tot)):
+                                        power_samples.append(refiner_power_samples_tot[j][1])
+
                                     
                                     total_inference_time += refiner_inference_time
                                     total_energy_consumed += refiner_energy_consumed
                                     total_average_power += refiner_average_power
+                                    total_power_samples.append(power_samples)
                                     
                                     print(f"Refiner - Time: {refiner_inference_time:.2f}s, Energy: {refiner_energy_consumed:.2f}J, Power: {refiner_average_power:.2f}W")
                                     
@@ -796,7 +818,11 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
                             feasibility["inference_time"].append(total_inference_time)
                             feasibility["energy_consumption"].append(total_energy_consumed)
                             feasibility["average_power"].append(average_total_power)
-                            
+                            all_power_samples = []
+                            for samples in total_power_samples:
+                                all_power_samples.extend(samples)
+                            feasibility["power_samples"].append(all_power_samples)
+
                             print(f"#################### explanation #{i} - Combined Time taken: {total_inference_time:.2f}s, Total Energy: {total_energy_consumed:.2f}J, Avg Power: {average_total_power:.2f}W ###########################")
                         else:
                             print(f"#################### explanation #{i} completed - Time taken: {total_inference_time:.2f}s ###########################")

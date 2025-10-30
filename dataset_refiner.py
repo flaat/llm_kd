@@ -14,10 +14,17 @@ def parse_arguments() -> argparse.Namespace:
 
     # Model configuration parameters
     parser.add_argument(
-        '--model_name',
+        '--worker_model_name',
         type=str,
-        default='deepseek_r1_qwen_32B_Q4_AWQ1',
-        help='Model name to use for experiments (default: deepseek_r1_qwen_32B_Q4_AWQ1)'
+        default='qwen3_30B_A3B',
+        help='Worker model name to generate draft narratives (default: qwen3_30B_A3B)'
+    )
+    
+    parser.add_argument(
+        '--refiner_model_name',
+        type=str,
+        default='qwen3_30B_A3B',
+        help='Refiner model name to refine draft narratives (default: qwen3_30B_A3B)'
     )
     
     parser.add_argument(
@@ -60,9 +67,16 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         '--dataset',
         type=str,
-        default='cora',
-        choices=['cora', 'adult', 'german', 'titanic'],
-        help='Dataset to use for experiments (default: cora)'
+        default='adult',
+        choices=['adult','titanic'],
+        help='Dataset to use for experiments (default: adult)'
+    )
+
+    parser.add_argument(
+        '--number_narratives',
+        type=int,
+        default=10,
+        help='Number of narratives to generate (default: 10)'
     )
 
     return parser.parse_args()
@@ -76,8 +90,8 @@ def display_config(args: argparse.Namespace) -> None:
         args: Parsed command-line arguments
     """
     print("\n========== EXPERIMENT CONFIGURATION ==========")
-    print(f"Teacher Model name:          {args.model_name}")
-    print(f"Teacher Model name:          unsloth/Qwen2.5-0.5B-Instruct-FineTuned")
+    print(f"Worker Model name:    {args.worker_model_name}")
+    print(f"Refiner Model name:   {args.refiner_model_name}")
     print(f"Model context length: {args.max_model_len}")
     print("\n----- Generation Parameters -----")
     print(f"Temperature:         {args.temperature}")
@@ -86,6 +100,7 @@ def display_config(args: argparse.Namespace) -> None:
     print(f"Repetition penalty:  {args.repetition_penalty}")
     print("\n----- Experiment Settings -----")
     print(f"Dataset:             {args.dataset}")
+    print(f"Number of narratives: {args.number_narratives}")
     print("=============================================\n")
 
 
@@ -104,13 +119,15 @@ def main() -> None:
 
     # Run the dataset building and refinement process
     build_dataset(
-        model_name=args.model_name,
+        worker_model_name=args.worker_model_name,
+        refiner_model_name=args.refiner_model_name,
         temperature=args.temperature,
         top_p=args.top_p,
         dataset=args.dataset,
         max_tokens=args.max_tokens,
         repetition_penalty=args.repetition_penalty,
-        max_model_len=args.max_model_len
+        max_model_len=args.max_model_len,
+        number_narratives=args.number_narratives
     )
     
 

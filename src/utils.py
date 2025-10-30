@@ -41,7 +41,12 @@ MODEL_MAPPING = {
     "unsloth_deepseek_r1_qwen_1.5B": "unsloth/DeepSeek-R1-Distill-Qwen-1.5B",   #used in the paper
     "unsloth_deepseek_r1_qwen_7B": "unsloth/DeepSeek-R1-Distill-Qwen-7B",   #used in the paper
     "unsloth_qwen_0.5B": "unsloth/Qwen2.5-0.5B-Instruct",   #used in the paper
-    "unsloth_qwen_3B": "unsloth/Qwen2.5-3B-Instruct"    #used in the paper
+    "unsloth_qwen_3B": "unsloth/Qwen2.5-3B-Instruct",    #used in the paper
+
+    # qwen3
+    "qwen3_8B": "Qwen/Qwen3-8B-AWQ",
+    "qwen3_30B_A3B": "QuantTrio/Qwen3-30B-A3B-Thinking-2507-AWQ",
+    "qwen3_32B": "Qwen/Qwen3-32B-AWQ"
 
 }
 
@@ -75,8 +80,14 @@ Your output should follow the following JSON structure:
     "reasoning": "<YOUR_REASONING>",
     "explanation": "<YOUR_SUMMARY>"
 }}
-Please remeber to include also the target variable in the feature_changes list.
-Please avoid any further explanation, clarification or other unnecessary outputs, just provide the JSON. Here is your input:
+Please remember to include also the target variable in the feature_changes list.
+
+Final Instructions:
+1. Do not include any JSON or list objects in your reasoning process.
+2. Do not repeat or restate your reasoning, feature changes, or conclusions. Each point should appear only once in the final JSON.
+3. Output only the final JSON object exactly in the required format, with no explanations, comments, or extra text before or after it.
+
+Here is your input:
 ### Dataset Description ###
 {dataset_description}
 
@@ -97,14 +108,14 @@ Given the following inputs:
 - Dataset Description: Background knowledge about the dataset, including feature definitions, their significance, and statistical distributions.
 - Factual Example: A specific instance from the dataset that was classified under the original conditions.
 - Counterfactual Example: A modified version of the factual example where certain features have been altered, resulting in a different classification.
-- Draft Explanations: Three independent draft explanations of the same factual/counterfactual pair. These explanations may overlap, complement, or partially contradict each other.
+- Draft Explanations: Multiple independent draft explanations of the same factual/counterfactual pair. These explanations may overlap, complement, or partially contradict each other.
 
 The explanation should:
 1. Identify Feature Changes: List and describe the features that differ between the factual and counterfactual examples. You should follow the structure outlined below.
 2. Reasoning: Carry out a reasoning step that is functional to generating the final summary, in particular:
     - Analyze Contribution of Features: Assess the influence of each changed feature on the classification outcome, leveraging dataset knowledge to justify its impact.
     - Highlight Interactions: Discuss any interactions between features that may have played a role in shifting the classification outcome.
-3. Integrate Draft Explanations: Carefully review the three draft explanations. Extract the core claims and evidence presented in each. In particular:
+3. Integrate Draft Explanations: Carefully review the draft explanations. Extract the core claims and evidence presented in each. In particular:
    - Where explanations conflict or differ, resolve these contradictions by prioritizing statements best supported by the dataset description and the identified feature changes.
    - Merge complementary insights to create a unified, logically consistent explanation, avoiding redundancy and ensuring the final narrative flows coherently.
 4. Summarize Key Factors: Conclude with a concise summary of the most influential features and their role in altering the prediction. The summary should be approximately 250 words. Avoid using bullet points, lists, or numerical outlines. Provide your responses in complete sentences and paragraphs, explaining concepts clearly and concisely in a continuous flow. The summary should be clear, coherent, and provide an intuitive understanding of how the model's decision was influenced by the observed feature modifications.
@@ -120,8 +131,12 @@ Your output should follow the following JSON structure:
     "reasoning": "<YOUR_REASONING>",
     "explanation": "<YOUR_SUMMARY>"
 }}
-Please remeber to include also the target variable in the feature_changes list.
-Please avoid any further explanation, clarification or other unnecessary outputs, just provide the JSON. Here is your input:
+Please remember to include also the target variable in the feature_changes list.
+
+Final Instructions:
+- Output only the final JSON object exactly in the required format, with no explanations, comments, or extra text before or after it.
+
+Here is your input:
 ### Dataset Description ###
 {dataset_description}
 
@@ -131,14 +146,7 @@ Please avoid any further explanation, clarification or other unnecessary outputs
 ### Counterfactual Example ###
 {counterfactual_example}
 
-### Draft Explanation 1 ###
-{draft_explanation_1}
-
-### Draft Explanation 2 ###
-{draft_explanation_2}
-
-### Draft Explanation 3 ###
-{draft_explanation_3}
+{draft_narratives}
 """.strip()
 
 
@@ -166,8 +174,12 @@ Your output should follow the following JSON structure:
     ],
     "explanation": "<YOUR_SUMMARY>"
 }}
+Please remember to include also the target variable in the feature_changes list.
 
-Please avoid any further explanation, clarification or other unnecessary outputs, just provide the JSON. Here is your input:
+Final Instructions:
+- Output only the final JSON object exactly in the required format, with no explanations, comments, or extra text before or after it.
+
+Here is your input:
 ### Dataset Description ###
 {dataset_description}
 
