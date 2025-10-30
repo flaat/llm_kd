@@ -1,5 +1,6 @@
 import argparse
-from src.build_dataset_refiner import build_dataset
+from src.build_dataset_refiner import build_dataset_ref
+from src.build_dataset_worker import build_dataset_wor
 
 def parse_arguments() -> argparse.Namespace:
     """
@@ -30,8 +31,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         '--max_model_len',
         type=int,
-        default=4000,
-        help='Maximum context length for the model (default: 4000)'
+        default=8192,
+        help='Maximum context length for the model (default: 8192)'
     )
 
     # Generation parameters
@@ -52,8 +53,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         '--max_tokens',
         type=int,
-        default=2048,
-        help='Maximum number of tokens to generate (default: 2048)'
+        default=4096,
+        help='Maximum number of tokens to generate (default: 4096)'
     )
     
     parser.add_argument(
@@ -77,6 +78,12 @@ def parse_arguments() -> argparse.Namespace:
         type=int,
         default=10,
         help='Number of narratives to generate (default: 10)'
+    )
+
+    parser.add_argument(
+        '--only_worker',
+        action='store_true',
+        help='Whether to only run the worker model (default: False)'
     )
 
     return parser.parse_args()
@@ -117,18 +124,30 @@ def main() -> None:
     # Display configuration for user verification
     display_config(args)
 
-    # Run the dataset building and refinement process
-    build_dataset(
-        worker_model_name=args.worker_model_name,
-        refiner_model_name=args.refiner_model_name,
-        temperature=args.temperature,
-        top_p=args.top_p,
-        dataset=args.dataset,
-        max_tokens=args.max_tokens,
-        repetition_penalty=args.repetition_penalty,
-        max_model_len=args.max_model_len,
-        number_narratives=args.number_narratives
-    )
+    if args.only_worker:
+        # Run only the worker model dataset building process
+        build_dataset_wor(
+            model_name=args.worker_model_name,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            dataset=args.dataset,
+            max_tokens=args.max_tokens,
+            repetition_penalty=args.repetition_penalty,
+            max_model_len=args.max_model_len
+        )
+    else:
+        # Run the dataset building and refinement process
+        build_dataset_ref(
+            worker_model_name=args.worker_model_name,
+            refiner_model_name=args.refiner_model_name,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            dataset=args.dataset,
+            max_tokens=args.max_tokens,
+            repetition_penalty=args.repetition_penalty,
+            max_model_len=args.max_model_len,
+            number_narratives=args.number_narratives
+        )
     
 
 if __name__ == "__main__":

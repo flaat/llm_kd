@@ -150,7 +150,7 @@ def extract_narratives(results: list, number_narratives: int):
     return tuple(narratives[:number_narratives] + [None] * (number_narratives - len(narratives)))
 
 
-def build_dataset(worker_model_name: str, refiner_model_name: str, temperature: float, top_p: float, dataset: str, max_tokens: int, repetition_penalty: float, max_model_len, number_narratives: int):
+def build_dataset_ref(worker_model_name: str, refiner_model_name: str, temperature: float, top_p: float, dataset: str, max_tokens: int, repetition_penalty: float, max_model_len, number_narratives: int):
     set_full_reproducibility()
     
     LOWER_BOUND = 0
@@ -345,13 +345,4 @@ def build_dataset(worker_model_name: str, refiner_model_name: str, temperature: 
                     i += 1
     # Final save after loop completion
     save_responses(responses, output_file)
-
-"""
-<user>input</user>
-
-<thinking>thinking</thinking><assistant>outtput</assistant>
-
-[...] similarly to Deepseek R1 (citazione), we train our model using an RL-free Inference-time Compute objective [...]
-
-"""
 
