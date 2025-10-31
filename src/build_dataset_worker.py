@@ -50,12 +50,10 @@ def build_dataset_wor(model_name: str, temperature: float, top_p: float, dataset
     set_full_reproducibility()
     
     LOWER_BOUND = 0
-    UPPER_BOUND = 0
+    UPPER_BOUND = 50000
     
     global prompt
-    global prompt_ref
     base_prompt = prompt
-    base_prompt_ref = prompt_ref
     
     # Map model names to HuggingFace identifiers
     model_path = MODEL_MAPPING[model_name]

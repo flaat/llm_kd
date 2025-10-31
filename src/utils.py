@@ -85,9 +85,8 @@ Your output should follow the following JSON structure:
 Please remember to include also the target variable in the feature_changes list.
 
 Final Instructions:
-1. Do not include any JSON or list objects in your reasoning process.
-2. Do not repeat or restate your reasoning, feature changes, or conclusions. Each point should appear only once in the final JSON.
-3. Output only the final JSON object exactly in the required format, with no explanations, comments, or extra text before or after it.
+1. Do not include any JSON or list objects in your internal reasoning process.
+2. Output only the final JSON object exactly in the required format, with no explanations, comments, or extra text before or after it.
 
 Here is your input:
 ### Dataset Description ###
