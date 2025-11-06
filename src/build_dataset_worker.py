@@ -85,7 +85,7 @@ def build_dataset_wor(model_name: str, temperature: float, top_p: float, dataset
 
     # Load counterfactual data
     with open(f"src/explainer/counterfactuals.json", 'r', encoding='utf-8') as file1:
-        data1 = json.load(file1)
+        data = json.load(file1)
 
     
     i = 0  # Counter for responses
@@ -93,7 +93,7 @@ def build_dataset_wor(model_name: str, temperature: float, top_p: float, dataset
     if dataset == "adult":
         dataset = "adult income"
 
-    for dataset_name, examples in data1.items():
+    for dataset_name, examples in data.items():
 
         if dataset_name.lower() == dataset:
             for index, values in examples.items():

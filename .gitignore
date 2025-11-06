@@ -12,3 +12,5 @@ outputs_unsloth_adult
 outputs_unsloth_titanic
 outputs_unsloth_titanic_refiner
 outputs_unsloth_adult_refiner
+
+.env

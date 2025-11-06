@@ -49,7 +49,12 @@ MODEL_MAPPING = {
     "qwen3_8B": "Qwen/Qwen3-8B-AWQ",
     "qwen3_30B_A3B": "QuantTrio/Qwen3-30B-A3B-Thinking-2507-AWQ",
     "qwen3_32B": "Qwen/Qwen3-32B-AWQ"
+}
 
+GOOGLE_API_MODEL_MAPPING = {
+    "gemini_2.0_flash": "gemini-2.0-flash",
+    "gemini_2.5_flash_lite": "gemini-2.5-flash-lite",
+    "gemini_2.5_flash": "gemini-2.5-flash"
 }
 
 
@@ -69,7 +74,20 @@ The explanation should:
 2. Reasoning: Carry out a reasoning step that is functional to generating the final summary, in particular:
     - Analyze Contribution of Features: Assess the influence of each changed feature on the classification outcome, leveraging dataset knowledge to justify its impact.
     - Highlight Interactions: Discuss any interactions between features that may have played a role in shifting the classification outcome.
-3. Summarize Key Factors: Conclude with a concise summary of the most influential features and their role in altering the prediction. The summary should be approximately 250 words. Avoid using bullet points, lists, or numerical outlines. Provide your responses in complete sentences and paragraphs, explaining concepts clearly and concisely in a continuous flow. The summary should be clear, coherent, and provide an intuitive understanding of how the model's decision was influenced by the observed feature modifications.
+3. Generate the narrative explanation: Write a concise summary of the most influential features and their role in altering the prediction. The summary should be approximately 250 words. Avoid using bullet points, lists, or numerical outlines. Provide your responses in complete sentences and paragraphs, explaining concepts clearly and concisely in a continuous flow. The summary should be clear, coherent, and provide an intuitive understanding of how the model's decision was influenced by the observed feature modifications.
+4. Extract features and their importance ranks: Review the narrative explanation generated in step 3 and identify all features that are explicitly mentioned. For each feature mentioned, assign an importance rank based on the following rules:
+   - Rank assignment rules:
+     * Start with rank '1' for the first feature mentioned with explicit importance language (e.g., "most important", "most impactful", "primary").
+     * If a subsequent feature uses language indicating equal importance (e.g., "Concurrently", "In parallel", "coupled with", "similarly"), assign it the same rank as the previous feature.
+     * If a subsequent feature uses language indicating lower importance (e.g., "Additionally", "Furthermore", "Also"), assign it the next higher rank number (rank '2', '3', etc.).
+     * If a feature uses language indicating higher importance than the current rank (e.g., "most important" when current rank is '2'), reset to rank '1' for that feature.
+     * If no explicit ranking language is provided (e.g., "the most important features are <FEATURE_1>, <FEATURE_2>, and <FEATURE_3>"), assign rank '1' to all mentioned features.
+   - Inclusion rules:
+     * Only include features that are actually mentioned in the explanation. Do not include features that were changed but not discussed in the narrative.
+   - Examples: 
+        * "the most important feature is <FEATURE_1>. Another important feature is <FEATURE_2>. Furthermore, <FEATURE_3> is also important": rank '1' for <FEATURE_1>, rank '2' for <FEATURE_2>, and rank '3' for <FEATURE_3>.
+        * "the most important feature is <FEATURE_1>. Concurrently, <FEATURE_2> is impactful. Additionally, <FEATURE_3> is important": rank '1' for <FEATURE_1>, rank '1' for <FEATURE_2> (same rank due to "Concurrently"), and rank '2' for <FEATURE_3>.
+        * "the most important feature is <FEATURE_1>. Concurrently, <FEATURE_2> is impactful. Maybe, <FEATURE_3> is the most important one": rank '1' for <FEATURE_1>, rank '1' for <FEATURE_2>, and rank '1' for <FEATURE_3> (resets to rank '1' due to "most important").
 
 Your output should follow the following JSON structure:
 {{
@@ -80,7 +98,12 @@ Your output should follow the following JSON structure:
     ],
     "target_variable_change": {{"factual": "<FACTUAL_TARGET>", "counterfactual": "<COUNTERFACTUAL_TARGET>"}}, 
     "reasoning": "<YOUR_REASONING>",
-    "explanation": "<YOUR_SUMMARY>"
+    "explanation": "<YOUR_SUMMARY>",
+    "explanation_features": {{
+        "<FEATURE_NAME_1>": "<RANK_IN_EXPLANATION_1>",
+        ...
+        "<FEATURE_NAME_M>": "<RANK_IN_EXPLANATION_M>",
+    }}
 }}
 Please remember to include also the target variable in the feature_changes list.
 
