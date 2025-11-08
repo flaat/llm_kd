@@ -108,8 +108,8 @@ def _extract_explanation_from_text(text: str) -> str | None:
     return None
 
 
-def _extract_explanation_features(text: str) -> Dict[str, str] | None:
-    """Extract explanation_features dictionary from generated text."""
+def _extract_features_importance_ranking(text: str) -> Dict[str, int] | None:
+    """Extract features_importance_ranking dictionary from generated text and normalize values to integers."""
     if not text:
         return None
     cleaned = _strip_reasoning_sections(text)
@@ -119,19 +119,37 @@ def _extract_explanation_features(text: str) -> Dict[str, str] | None:
         blob2 = _last_balanced_json_object(cleaned)
         response = _parse_json_loose(blob2) if blob2 else None
     if isinstance(response, dict):
-        features = response.get("explanation_features")
+        features = response.get("features_importance_ranking")
         if isinstance(features, dict):
-            return features
-    # Try regex fallback for explanation_features
-    m = re.search(r'"explanation_features"\s*:\s*\{([^}]+)\}', cleaned, flags=re.DOTALL)
+            # Normalize all values to integers
+            normalized = {}
+            for key, value in features.items():
+                try:
+                    normalized[key] = int(value)
+                except (ValueError, TypeError):
+                    # Skip invalid values
+                    continue
+            return normalized if normalized else None
+    # Try regex fallback for features_importance_ranking
+    m = re.search(r'"features_importance_ranking"\s*:\s*\{([^}]+)\}', cleaned, flags=re.DOTALL)
     if m:
         try:
             # Try to extract key-value pairs
             content = m.group(1)
-            # Match "key": "value" patterns
+            # Match "key": "value" patterns (both quoted and unquoted values)
+            # First try quoted values
             pairs = re.findall(r'"([^"]+)"\s*:\s*"([^"]+)"', content)
+            if not pairs:
+                # Try unquoted numeric values
+                pairs = re.findall(r'"([^"]+)"\s*:\s*(\d+)', content)
             if pairs:
-                return dict(pairs)
+                normalized = {}
+                for key, value in pairs:
+                    try:
+                        normalized[key] = int(value)
+                    except (ValueError, TypeError):
+                        continue
+                return normalized if normalized else None
         except Exception:
             pass
     return None
@@ -204,7 +222,7 @@ def _llm_generate_google(
     raise RuntimeError(f"Google generation failed after {max_retries} attempts: {last_err}")
 
 
-def _compute_jaccard_similarity(dict1: Dict[str, str], dict2: Dict[str, str]) -> float:
+def _compute_jaccard_similarity(dict1: Dict[str, int], dict2: Dict[str, int]) -> float:
     """Compute Jaccard similarity between two dictionaries based on their keys (feature names)."""
     set1 = set(dict1.keys()) if dict1 else set()
     set2 = set(dict2.keys()) if dict2 else set()
@@ -218,8 +236,8 @@ def _compute_jaccard_similarity(dict1: Dict[str, str], dict2: Dict[str, str]) ->
     return intersection / union if union > 0 else 0.0
 
 
-def _compute_kendall_tau_pairwise(dict1: Dict[str, str], dict2: Dict[str, str]) -> float:
-    """Compute Kendall's tau between two explanation_features dictionaries on intersecting features."""
+def _compute_kendall_tau_pairwise(dict1: Dict[str, int], dict2: Dict[str, int]) -> float:
+    """Compute Kendall's tau between two features_importance_ranking dictionaries on intersecting features."""
     if not dict1 or not dict2:
         return float("nan")
     
@@ -229,21 +247,20 @@ def _compute_kendall_tau_pairwise(dict1: Dict[str, str], dict2: Dict[str, str]) 
         # Need at least 2 features to compute Kendall's tau
         return float("nan")
     
-    # Convert rank strings to integers and create ordered lists
+    # Create ordered lists of ranks (values are already integers)
     # Use consistent ordering (sorted by feature name) for both dictionaries
     try:
         ranks1 = []
         ranks2 = []
         for feature in sorted(common_features):  # Sort for consistent ordering
-            rank1_str = dict1[feature]
-            rank2_str = dict2[feature]
-            try:
-                rank1 = int(rank1_str)
-                rank2 = int(rank2_str)
-                ranks1.append(rank1)
-                ranks2.append(rank2)
-            except (ValueError, TypeError):
-                # Skip if rank is not a valid integer
+            rank1 = dict1[feature]
+            rank2 = dict2[feature]
+            # Values should already be integers, but handle edge cases
+            if isinstance(rank1, (int, float)) and isinstance(rank2, (int, float)):
+                ranks1.append(int(rank1))
+                ranks2.append(int(rank2))
+            else:
+                # Skip if rank is not a valid number
                 continue
         
         if len(ranks1) < 2:
@@ -257,9 +274,14 @@ def _compute_kendall_tau_pairwise(dict1: Dict[str, str], dict2: Dict[str, str]) 
         return float("nan")
 
 
-def _compute_avg_pairwise_jaccard_similarity(explanation_features_lists: List[Dict[str, str]], n: int) -> float:
-    """Compute average pairwise Jaccard similarity for first n explanation_features dictionaries."""
-    subset = explanation_features_lists[:n]
+def _compute_avg_pairwise_jaccard_similarity(features_importance_ranking_lists: List[Dict[str, int]], n: int) -> float:
+    """Compute average pairwise Jaccard similarity for first n features_importance_ranking dictionaries."""
+    if len(features_importance_ranking_lists) < n:
+        logger.debug(
+            f"Requested n={n} narratives but only {len(features_importance_ranking_lists)} available; skipping Jaccard computation."
+        )
+        return float("nan")
+    subset = features_importance_ranking_lists[:n]
     if len(subset) < 2:
         logger.debug(f"Not enough dictionaries for pairwise comparison (n={n}, len={len(subset)})")
         return float("nan")
@@ -284,9 +306,14 @@ def _compute_avg_pairwise_jaccard_similarity(explanation_features_lists: List[Di
     return avg_sim
 
 
-def _compute_avg_pairwise_kendall_tau(explanation_features_lists: List[Dict[str, str]], n: int) -> float:
-    """Compute average pairwise Kendall's tau for first n explanation_features dictionaries."""
-    subset = explanation_features_lists[:n]
+def _compute_avg_pairwise_kendall_tau(features_importance_ranking_lists: List[Dict[str, int]], n: int) -> float:
+    """Compute average pairwise Kendall's tau for first n features_importance_ranking dictionaries."""
+    if len(features_importance_ranking_lists) < n:
+        logger.debug(
+            f"Requested n={n} narratives but only {len(features_importance_ranking_lists)} available; skipping Kendall computation."
+        )
+        return float("nan")
+    subset = features_importance_ranking_lists[:n]
     if len(subset) < 2:
         logger.debug(f"Not enough dictionaries for pairwise comparison (n={n}, len={len(subset)})")
         return float("nan")
@@ -320,6 +347,7 @@ def assess_narratives(
     max_tokens: int,
     repetition_penalty: float,
     max_model_len: int,
+    num_narratives: int=20,
 ) -> None:
     logger.info("=" * 60)
     logger.info(f"Starting narrative assessment for model: {model_name}, dataset: {dataset}")
@@ -418,14 +446,14 @@ def assess_narratives(
                 )
 
                 logger.info(f"Processing sample {sample_counter} (dataset: {dataset_name}, index: {index})")
-                logger.info(f"Generating 20 narratives for sample {sample_counter}...")
+                logger.info(f"Generating {num_narratives} narratives for sample {sample_counter}...")
                 narr_start_time = time.time()
                 
-                # Generate exactly 10 narratives with retry logic
+                # Generate narratives with retry logic
                 narratives: List[str] = []
-                explanation_features_lists: List[Dict[str, str]] = []
-                for j in range(10):
-                    logger.info(f"  Generating narrative {j+1}/10 for sample {sample_counter}...")
+                features_importance_ranking_lists: List[Dict[str, str]] = []
+                for j in range(num_narratives):
+                    logger.info(f"  Generating narrative {j+1}/{num_narratives} for sample {sample_counter}...")
                     narr_gen_start = time.time()
                     if not use_google:
                         gen_text = _llm_generate_vllm(
@@ -436,16 +464,16 @@ def assess_narratives(
                             google_client, resolved_model, current_prompt, temperature=temperature, top_p=top_p
                         )
                     narr_gen_time = time.time() - narr_gen_start
-                    logger.info(f"  Narrative {j+1}/10 generated in {narr_gen_time:.2f}s")
+                    logger.info(f"  Narrative {j+1}/{num_narratives} generated in {narr_gen_time:.2f}s")
                     
-                    logger.debug(f"  Extracting explanation and explanation_features from generated text...")
+                    logger.debug(f"  Extracting explanation and features_importance_ranking from generated text...")
                     explanation = _extract_explanation_from_text(gen_text)
                     if explanation is None:
                         logger.warning(f"  Failed to extract explanation on first attempt, retrying...")
                         # Treat extraction failure as failure and retry up to 2 more times
                         retry_ok = False
                         for retry_num in range(2):
-                            logger.info(f"  Retry {retry_num+1}/2 for narrative {j+1}/20...")
+                            logger.info(f"  Retry {retry_num+1}/2 for narrative {j+1}/{num_narratives}...")
                             if not use_google:
                                 gen_text = _llm_generate_vllm(
                                     vllm_llm, tokenizer, sampling_params, current_prompt, max_retries=1
@@ -460,31 +488,38 @@ def assess_narratives(
                                 logger.info(f"  Successfully extracted explanation on retry {retry_num+1}")
                                 break
                         if not retry_ok:
-                            raise RuntimeError("Failed to extract narrative explanation after 3 attempts")
+                            #raise RuntimeError("Failed to extract narrative explanation after 3 attempts")
+                            logger.warning(f"  Failed to extract explanation on retry {retry_num+1}, continuing...")
+                            continue
                     else:
                         logger.debug(f"  Explanation extracted successfully (length: {len(explanation)} chars)")
                     
                     # Store narrative explanation
                     narratives.append(explanation)
 
-                    # Extract explanation_features (treat missing as None)
-                    explanation_features = _extract_explanation_features(gen_text)
-                    explanation_features_lists.append(explanation_features if explanation_features else {})
-                    num_features = len(explanation_features) if explanation_features else 0
-                    logger.info(f"  Narrative {j+1}/10 completed (features: {num_features} items)")
+                    # Extract features_importance_ranking (treat missing as None)
+                    features_importance_ranking = _extract_features_importance_ranking(gen_text)
+                    features_importance_ranking_lists.append(features_importance_ranking if features_importance_ranking else {})
+                    num_features = len(features_importance_ranking) if features_importance_ranking else 0
+                    logger.info(f"  Narrative {j+1}/{num_narratives} completed (features: {num_features} items)")
 
                 narr_total_time = time.time() - narr_start_time
-                logger.info(f"All 10 narratives generated for sample {sample_counter} in {narr_total_time:.2f}s")
+                logger.info(f"All {num_narratives} narratives generated for sample {sample_counter} in {narr_total_time:.2f}s")
 
                 # Compute per-n average pairwise Jaccard similarities and Kendall's tau
                 logger.info(f"Computing pairwise metrics for sample {sample_counter}...")
                 sim_comp_start = time.time()
                 avg_jaccard: Dict[str, float] = {}
                 avg_kendall_tau: Dict[str, float] = {}
-                for n in range(3, 21):
+                available_narratives = len(features_importance_ranking_lists)
+                if available_narratives < num_narratives:
+                    logger.info(
+                        f"  Only {available_narratives} valid narratives collected (requested {num_narratives}); metrics computed up to this count."
+                    )
+                for n in range(3, min(num_narratives, available_narratives) + 1):
                     logger.info(f"  Computing metrics for n={n}...")
-                    avg_jaccard[str(n)] = _compute_avg_pairwise_jaccard_similarity(explanation_features_lists, n)
-                    avg_kendall_tau[str(n)] = _compute_avg_pairwise_kendall_tau(explanation_features_lists, n)
+                    avg_jaccard[str(n)] = _compute_avg_pairwise_jaccard_similarity(features_importance_ranking_lists, n)
+                    avg_kendall_tau[str(n)] = _compute_avg_pairwise_kendall_tau(features_importance_ranking_lists, n)
                     logger.info(f"  Average pairwise Jaccard similarity for n={n}: {avg_jaccard[str(n)]:.4f}")
                     logger.info(f"  Average pairwise Kendall's tau for n={n}: {avg_kendall_tau[str(n)]:.4f}")
                 sim_comp_time = time.time() - sim_comp_start
@@ -497,7 +532,7 @@ def assess_narratives(
                     "factual": values["factual"],
                     "counterfactual": counterfactual,
                     "narratives": narratives,
-                    "explanation_features": explanation_features_lists,
+                    "features_importance_ranking": features_importance_ranking_lists,
                     "avg_pairwise_jaccard": avg_jaccard,
                     "avg_pairwise_kendall_tau": avg_kendall_tau,
                 }
@@ -523,7 +558,7 @@ def assess_narratives(
     logger.info("Aggregating metric data across samples...")
     import matplotlib.pyplot as plt
 
-    counts = list(range(3, 11))
+    counts = list(range(3, num_narratives + 1))
     per_count_jaccard: Dict[int, List[float]] = {c: [] for c in counts}
     per_count_kendall_tau: Dict[int, List[float]] = {c: [] for c in counts}
     

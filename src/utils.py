@@ -74,21 +74,8 @@ The explanation should:
 2. Reasoning: Carry out a reasoning step that is functional to generating the final summary, in particular:
     - Analyze Contribution of Features: Assess the influence of each changed feature on the classification outcome, leveraging dataset knowledge to justify its impact.
     - Highlight Interactions: Discuss any interactions between features that may have played a role in shifting the classification outcome.
+    - Determine the importance ranking: Rank the features based on their contribution to the classification outcome. The ranking should be based on the identified contribution of feature changes. You MUST use tied ranks for features with the same contribution (e.g., "1,1,2,3", "1,1,1", "1,2,2,3", etc.).
 3. Generate the narrative explanation: Write a concise summary of the most influential features and their role in altering the prediction. The summary should be approximately 250 words. Avoid using bullet points, lists, or numerical outlines. Provide your responses in complete sentences and paragraphs, explaining concepts clearly and concisely in a continuous flow. The summary should be clear, coherent, and provide an intuitive understanding of how the model's decision was influenced by the observed feature modifications.
-4. Extract features and their importance ranks: Review the narrative explanation generated in step 3 and identify all features that are explicitly mentioned. For each feature mentioned, assign an importance rank based on the following rules:
-   - Rank assignment rules:
-     * Start with rank '1' for the first feature mentioned with explicit importance language (e.g., "most important", "most impactful", "primary").
-     * If a subsequent feature uses language indicating equal importance (e.g., "Concurrently", "In parallel", "coupled with", "similarly"), assign it the same rank as the previous feature.
-     * If a subsequent feature uses language indicating lower importance (e.g., "Additionally", "Furthermore", "Also"), assign it the next higher rank number (rank '2', '3', etc.).
-     * If a feature uses language indicating higher importance than the current rank (e.g., "most important" when current rank is '2'), reset to rank '1' for that feature.
-     * If no explicit ranking language is provided (e.g., "the most important features are <FEATURE_1>, <FEATURE_2>, and <FEATURE_3>"), assign rank '1' to all mentioned features.
-   - Inclusion rules:
-     * Only include features that are actually mentioned in the explanation. Do not include features that were changed but not discussed in the narrative.
-   - Examples: 
-        * "the most important feature is <FEATURE_1>. Another important feature is <FEATURE_2>. Furthermore, <FEATURE_3> is also important": rank '1' for <FEATURE_1>, rank '2' for <FEATURE_2>, and rank '3' for <FEATURE_3>.
-        * "the most important feature is <FEATURE_1>. Concurrently, <FEATURE_2> is impactful. Additionally, <FEATURE_3> is important": rank '1' for <FEATURE_1>, rank '1' for <FEATURE_2> (same rank due to "Concurrently"), and rank '2' for <FEATURE_3>.
-        * "the most important feature is <FEATURE_1>. Concurrently, <FEATURE_2> is impactful. Maybe, <FEATURE_3> is the most important one": rank '1' for <FEATURE_1>, rank '1' for <FEATURE_2>, and rank '1' for <FEATURE_3> (resets to rank '1' due to "most important").
-
 Your output should follow the following JSON structure:
 {{
     "feature_changes": [
@@ -98,12 +85,12 @@ Your output should follow the following JSON structure:
     ],
     "target_variable_change": {{"factual": "<FACTUAL_TARGET>", "counterfactual": "<COUNTERFACTUAL_TARGET>"}}, 
     "reasoning": "<YOUR_REASONING>",
-    "explanation": "<YOUR_SUMMARY>",
-    "explanation_features": {{
-        "<FEATURE_NAME_1>": "<RANK_IN_EXPLANATION_1>",
+    "features_importance_ranking": {{
+        "<FEATURE_NAME_1>": "<RANK_NUMBER_1>",
         ...
-        "<FEATURE_NAME_M>": "<RANK_IN_EXPLANATION_M>",
-    }}
+        "<FEATURE_NAME_M>": "<RANK_NUMBER_M>"
+    }},
+    "explanation": "<YOUR_SUMMARY>"
 }}
 Please remember to include also the target variable in the feature_changes list.
 

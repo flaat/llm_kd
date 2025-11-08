@@ -11,7 +11,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         '--worker_model_name',
         type=str,
-        default='gemini_2.0_flash_lite',
+        default='qwen3_30B_A3B',
         help='Model name to generate narratives (default: gemini_2.5_flash_lite)'
     )
 
