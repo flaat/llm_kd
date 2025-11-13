@@ -26,5 +26,19 @@ dataset_kb = {
             Hours-per-week: The number of hours worked per week by the individual. It is represented as numerical values.\
             Native-country: The native country of the individual. Possible values include 'United-States', 'Cambodia', 'England', 'Puerto-Rico', 'Canada', 'Germany', 'Outlying-US(Guam-USVI-etc)', 'India', 'Japan', 'Greece', 'South', 'China', 'Cuba', 'Iran', 'Honduras', 'Philippines', 'Italy', 'Poland', 'Jamaica', 'Vietnam', 'Mexico', 'Portugal', 'Ireland', 'France', 'Dominican-Republic', 'Laos', 'Ecuador', 'Taiwan', 'Haiti', 'Columbia', 'Hungary', 'Guatemala', 'Nicaragua', 'Scotland', 'Thailand', 'Yugoslavia', 'El-Salvador', 'Trinadad&Tobago', 'Peru', 'Hong', 'Holand-Netherlands'.\
             Income (Target Variable): Indicates whether the individual's income is greater than 50K or less than or equal to 50K. Possible values are 1 if income >50K and 0 if income <=50K.
-            """.strip()
+            """.strip(),
+        "California Housing": """
+            The California Housing dataset is a well-known dataset commonly used in machine learning, especially for predictive modeling and classification tasks. It contains aggregated housing information from California districts and is widely used to study socio-economic factors and housing market patterns. 
+            In this version of the dataset, the target variable is transformed into a binary label indicating whether the median house value in a block group is above (1) or below (0) the overall median value, making it suitable for binary classification problems.
+            The dataset attributes are as follows:
+            MedInc (Median Income): Represents the median income of households in the block group. This feature is numerical and scaled such that a value of 1 corresponds to $10,000 in median income (e.g., 3.5 ≈ $35,000).\
+            HouseAge (Median House Age): Indicates the median age of the houses in the block group in years. The values are numerical, such as 5, 20, or 42.\
+            AveRooms (Average Number of Rooms): Represents the average number of rooms per household in the block group. This is a numerical value obtained by dividing the total number of rooms by the number of households.\
+            AveBedrms (Average Number of Bedrooms): Similar to AveRooms, this indicates the average number of bedrooms per household in the block group. It is represented as a numerical value.\
+            Population: The total population of the block group. This attribute contains numerical values, such as 500, 1520, or 3500.\
+            AveOccup (Average Household Occupancy): Indicates the average number of occupants per household in the block group. It is a numerical value representing household density.\
+            Latitude: The geographical latitude of the block group within California. It is represented as numerical coordinates.\
+            Longitude: The geographical longitude of the block group within California. It is also represented as numerical coordinates.\
+            MedHouseVal (Target Variable): A binary label indicating whether the median house value for the block group is above (1) or below (0) the median of all house values in the dataset.
+        """.strip()
 }

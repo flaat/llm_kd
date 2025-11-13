@@ -92,6 +92,8 @@ def build_dataset_wor(model_name: str, temperature: float, top_p: float, dataset
 
     if dataset == "adult":
         dataset = "adult income"
+    elif dataset == "california":
+        dataset = "california housing"
 
     for dataset_name, examples in data.items():
 
