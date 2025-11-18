@@ -44,7 +44,13 @@ MODEL_MAPPING = {
     "unsloth_deepseek_r1_qwen_7B": "unsloth/DeepSeek-R1-Distill-Qwen-7B",   #used in the paper
     "unsloth_qwen_0.5B": "unsloth/Qwen2.5-0.5B-Instruct",   #used in the paper
     "unsloth_qwen_3B": "unsloth/Qwen2.5-3B-Instruct",    #used in the paper
-
+    "unsloth_qwen3_0.6B": "unsloth/Qwen3-0.6B",    
+    "unsloth_qwen3_1.7B": "unsloth/Qwen3-1.7B",    
+    "unsloth_qwen3_4B-Instruct": "unsloth/Qwen3-4B-Instruct-2507",    
+    "unsloth_qwen3_4B-Thinking": "unsloth/Qwen3-4B-Thinking-2507",    
+    "unsloth_qwen3_4B": "unsloth/Qwen3-4B",    
+    "unsloth_llama_1B-Instruct": "unsloth/Llama-3.2-1B-Instruct",    
+    "unsloth_llama_3B-Instruct": "unsloth/Llama-3.2-3B-Instruct",    
     # qwen3
     "qwen3_8B": "Qwen/Qwen3-8B-AWQ",
     "qwen3_30B_A3B": "QuantTrio/Qwen3-30B-A3B-Thinking-2507-AWQ",

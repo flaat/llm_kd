@@ -131,19 +131,9 @@ def create_formatting_function(tokenizer):
 def setup_trainer(model, tokenizer, dataset, output_dir: str) -> SFTTrainer:
     """
     Configure and create the SFT trainer for fine-tuning.
-    
-    Args:
-        model: Model to be fine-tuned
-        tokenizer: Tokenizer for text processing
-        dataset: Dataset containing formatted training examples
-        output_dir: Directory to save model checkpoints
-        
-    Returns:
-        Configured SFTTrainer instance
     """
-    return SFTTrainer(
+    trainer = SFTTrainer(
         model=model,
-        tokenizer=tokenizer,
         train_dataset=dataset,
         dataset_text_field="text",
         max_seq_length=MAX_SEQ_LENGTH,
@@ -169,6 +159,10 @@ def setup_trainer(model, tokenizer, dataset, output_dir: str) -> SFTTrainer:
             save_steps=50
         ),
     )
+
+    # trl 0.24 non accetta più `tokenizer` nel costruttore
+    trainer.tokenizer = tokenizer
+    return trainer
 
 
 def print_memory_stats(start_gpu_memory: float, trainer_stats: Optional[Any] = None):
@@ -213,9 +207,9 @@ def main(model_name: str, dataset_name: str, refiner: bool) -> None:
     
     # Load dataset
     if refiner:
-        json_file_path = f"data/{dataset_name}_Refiner_cleaned.json"
+        json_file_path = f"data/{dataset_name}_refiner_{model_name}.json"
     else:
-        json_file_path = f"data/{dataset}.json"
+        json_file_path = f"data/{dataset_name}_worker_qwen3_30B_A3B.json"
     dataset = load_json_to_hf_dataset(json_file_path)
     
     # Create formatting function and process dataset
@@ -227,7 +221,7 @@ def main(model_name: str, dataset_name: str, refiner: bool) -> None:
     if refiner:
         output_dir = f"outputs_unsloth_{dataset_name}_refiner/{model_name}"
     else:
-        output_dir = f"outputs_unsloth_{dataset_name}/{model_name}"
+        output_dir = f"outputs_unsloth_{dataset_name}_worker/{model_name}"
     os.makedirs(output_dir, exist_ok=True)
     
     # Set up trainer
