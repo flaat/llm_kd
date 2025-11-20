@@ -80,7 +80,7 @@ The explanation should:
 2. Reasoning: Carry out a reasoning step that is functional to generating the final summary, in particular:
     - Analyze Contribution of Features: Assess the influence of each changed feature on the classification outcome, leveraging dataset knowledge to justify its impact.
     - Highlight Interactions: Discuss any interactions between features that may have played a role in shifting the classification outcome.
-    - Determine the importance ranking: Rank the features based on their contribution to the classification outcome. The ranking should be based on the identified contribution of feature changes. You MUST use tied ranks for features with the same contribution (e.g., "1,1,2,3", "1,1,1", "1,2,2,3", etc.).
+    - Determine the importance ranking: Rank the changed features based on their contribution to the classification outcome. The ranking should be based on the identified contribution of feature changes. You MUST use tied ranks for features with the same contribution (e.g., "1,1,2,3", "1,1,1", "1,2,2,3", etc.).
 3. Generate the narrative explanation: Write a concise summary of the most influential features and their role in altering the prediction. The summary should be approximately 250 words. Avoid using bullet points, lists, or numerical outlines. Provide your responses in complete sentences and paragraphs, explaining concepts clearly and concisely in a continuous flow. The summary should be clear, coherent, and provide an intuitive understanding of how the model's decision was influenced by the observed feature modifications.
 Your output should follow the following JSON structure:
 {{

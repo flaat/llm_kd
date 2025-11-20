@@ -224,9 +224,9 @@ def main(model_name: str, dataset_name: str, refiner: bool) -> None:
     
     # Load dataset
     if refiner:
-        json_file_path = f"data/{dataset_name}_refiner_{model_name}.json"
+        json_file_path = f"data/{dataset_name}_refiner_qwen3_30B_A3B_cleaned.json"
     else:
-        json_file_path = f"data/{dataset_name}_worker_qwen3_30B_A3B.json"
+        json_file_path = f"data/{dataset_name}_worker_qwen3_30B_A3B_cleaned.json"
     dataset = load_json_to_hf_dataset(json_file_path)
     
     # Create formatting function and process dataset
