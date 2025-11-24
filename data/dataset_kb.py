@@ -40,5 +40,19 @@ dataset_kb = {
             Latitude: The geographical latitude of the block group within California. It is represented as numerical coordinates.\
             Longitude: The geographical longitude of the block group within California. It is also represented as numerical coordinates.\
             MedHouseVal (Target Variable): A binary label indicating whether the median house value for the block group is above (1) or below (0) the median of all house values in the dataset.
-        """.strip()
+        """.strip(),
+        "Diabetes": """The Diabetes dataset (LARS) is a clinical dataset commonly used in machine learning. It contains physiological data from 442 diabetes patients, and it focuses on blood serum measurements to solve a binary classification task.\
+            The dataset attributes are as follows:\
+            age: Age of the passenger in years.\
+            sex: Biological sex of the patient. The values are 'Male' and 'Female'.\
+            bmi (Body Mass Index): A measure of body fat based on height and weight. Values are raw clinical measurements (e.g., 26.9).\
+            bp (Average Blood Pressure): Mean arterial pressure (MAP) measured in mmHg.\
+            s1 (Total Serum Cholesterol): Total amount of cholesterol in the blood (TC).\
+            s2 (Low-Density Lipoproteins): Often called 'bad cholesterol' (LDL).\
+            s3 (High-Density Lipoproteins): Often called 'good cholesterol' (HDL).\
+            s4 (Total Cholesterol / HDL Ratio): A calculated risk factor. Higher values indicate higher risk.\
+            s5 (Log of Serum Triglycerides): The natural logarithm of the serum triglycerides level. Note: This is on a log scale (e.g., a value of 5.3 corresponds to approx 200 mg/dL).\
+            s6 (Blood Sugar Level): Fasting blood glucose level (Glu).\
+            target (Disease Progression): Indicates the progression of the disease one year after baseline. The variable is binarized based on the population mean: 0 indicates 'Lower Progression' (below average, more stable) and 1 indicates 'Higher Progression' (above average, rapid worsening).
+            """.strip(),
 }
