@@ -146,7 +146,7 @@ def build_dataset_wor(model_name: str, temperature: float, top_p: float, dataset
     set_full_reproducibility()
     
     LOWER_BOUND = 0
-    UPPER_BOUND = 1
+    UPPER_BOUND = 50000
     
     global prompt
     base_prompt = prompt

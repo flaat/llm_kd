@@ -69,7 +69,7 @@ def parse_arguments() -> argparse.Namespace:
         '--dataset',
         type=str,
         default='adult',
-        choices=['adult','titanic', 'california'],
+        choices=['adult','titanic', 'california', 'diabetes'],
         help='Dataset to use for experiments (default: adult)'
     )
 
