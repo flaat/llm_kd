@@ -122,6 +122,12 @@ def normalize_value(value):
         return value
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return float(value)
+    # Try to convert string to float
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            pass
     return value
 
 
@@ -473,6 +479,34 @@ def check_truncated_generations(dataset: str, model: str, type_name: str, clean:
     
     truncated_percentage = (truncated_count / total_entries) * 100
     
+    # Calculate detailed feature mismatch counts
+    missing_only_count = 0
+    extra_only_count = 0
+    value_mismatch_only_count = 0
+    mixed_mismatch_count = 0
+    target_only_count = 0
+    
+    for detail in feature_mismatch_details:
+        if detail.get('reason'):
+            # This is a target_variable_change or feature_changes block issue
+            if 'target_variable_change' in detail.get('reason', ''):
+                target_only_count += 1
+        else:
+            missing = detail.get('missing', [])
+            extra = detail.get('extra', [])
+            value_mismatches = detail.get('value_mismatches', [])
+            
+            issue_count = sum([bool(missing), bool(extra), bool(value_mismatches)])
+            
+            if issue_count > 1:
+                mixed_mismatch_count += 1
+            elif missing:
+                missing_only_count += 1
+            elif extra:
+                extra_only_count += 1
+            elif value_mismatches:
+                value_mismatch_only_count += 1
+    
     # Print results
     print(f"\n📊 Results for '{filename}':")
     print(f"   Total entries: {total_entries}")
@@ -480,6 +514,11 @@ def check_truncated_generations(dataset: str, model: str, type_name: str, clean:
     print(f"   Ground-truth parsing failures: {len(ground_truth_fail)}")
     print(f"   JSON parsing failures: {len(json_parse_fail)}")
     print(f"   Feature change mismatches: {len(feature_issue_keys)}")
+    print(f"      - Missing features only: {missing_only_count}")
+    print(f"      - Extra features only: {extra_only_count}")
+    print(f"      - Value mismatches only: {value_mismatch_only_count}")
+    print(f"      - Mixed issues: {mixed_mismatch_count}")
+    print(f"      - Target variable mismatch: {target_only_count}")
     print(f"   Ranking mismatches: {len(ranking_issue_keys)}")
     if clean:
         print(f"   Entries cleaned (extra features removed): {len(cleaned_keys)}")
