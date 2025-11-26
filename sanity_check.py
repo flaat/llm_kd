@@ -168,16 +168,52 @@ def normalize_ranking_values(ranking: dict):
     return ranking
 
 
+def is_valid_ranking_sequence(ranking: dict):
+    """
+    Check that ranking values are numbered as 1..K with no gaps.
+    Repetitions are allowed (e.g., [1, 1, 2, 3, 3] is valid).
+    Also accepts string representations of integers (e.g., "1", "2").
+    """
+    if not isinstance(ranking, dict) or not ranking:
+        return False, "Missing or empty ranking"
+
+    values = list(ranking.values())
+    
+    # Convert string values to integers
+    converted_values = []
+    for v in values:
+        if isinstance(v, int):
+            converted_values.append(v)
+        elif isinstance(v, str):
+            try:
+                converted_values.append(int(v))
+            except ValueError:
+                return False, f"Non-integer ranking value: {v}"
+        else:
+            return False, f"Invalid ranking value type: {type(v)}"
+
+    unique_vals = sorted(set(converted_values))
+    if unique_vals[0] != 1:
+        return False, "Ranking must start at 1"
+
+    if unique_vals[-1] != len(unique_vals):
+        # There is a gap (e.g., 1, 3, 4 -> unique=[1,3,4], max=4, len=3)
+        return False, f"Ranking must be consecutive integers 1..K (found {unique_vals})"
+
+    return True, None
+
+
 def prune_feature_changes(feature_changes_list, extras):
     if not isinstance(feature_changes_list, list):
         return feature_changes_list
-    extras_set = set(extras)
+    # Use case-insensitive comparison
+    extras_set_lower = {extra.lower() for extra in extras}
     pruned = []
     for change in feature_changes_list:
         if not isinstance(change, dict):
             continue
         feature_name = next(iter(change.keys()), None)
-        if feature_name and feature_name in extras_set:
+        if feature_name and feature_name.lower() in extras_set_lower:
             continue
         pruned.append(change)
     return pruned
@@ -203,10 +239,29 @@ def clean_extraneous_features(entry, json_info, parsed_json, extras):
     if feature_changes_list == new_feature_changes:
         return False
     parsed_json["feature_changes"] = new_feature_changes
+    
+    # After pruning feature_changes, also check ranking for any extras
     ranking = parsed_json.get("features_importance_ranking")
     if isinstance(ranking, dict):
-        for feature in extras:
+        # Get the new set of feature names after pruning
+        new_feature_names = set()
+        for change in new_feature_changes:
+            if isinstance(change, dict):
+                new_feature_names.update(change.keys())
+        
+        # Create case-insensitive mapping
+        new_feature_names_lower = {name.lower() for name in new_feature_names}
+        
+        # Remove from ranking any features not in the pruned feature_changes (case-insensitive)
+        features_to_remove = [f for f in ranking.keys() if f.lower() not in new_feature_names_lower]
+        
+        for feature in features_to_remove:
             ranking.pop(feature, None)
+        
+        if not ranking:
+            # If ranking is now empty, this entry should be removed
+            return False
+            
         parsed_json["features_importance_ranking"] = normalize_ranking_values(ranking)
     replace_json_segment(entry, json_info, parsed_json)
     return True
@@ -362,9 +417,15 @@ def check_truncated_generations(dataset: str, model: str, type_name: str, clean:
                 keys_to_remove.add(key)
             continue
 
-        ranking_features = set(ranking.keys())
-        feature_change_names = set(feature_changes.keys())
-        extras_in_ranking = sorted(ranking_features - feature_change_names)
+        # Create case-insensitive mapping for feature names
+        feature_change_names_lower = {name.lower(): name for name in feature_changes.keys()}
+        
+        # Find extras in ranking (case-insensitive)
+        extras_in_ranking = []
+        for rank_feature in ranking.keys():
+            if rank_feature.lower() not in feature_change_names_lower:
+                extras_in_ranking.append(rank_feature)
+        
         if extras_in_ranking:
             if clean:
                 changed = False
@@ -373,16 +434,36 @@ def check_truncated_generations(dataset: str, model: str, type_name: str, clean:
                         del ranking[feature]
                         changed = True
                 if changed:
+                    # Check if ranking is now empty after removal
+                    if not ranking:
+                        keys_to_remove.add(key)
+                        continue
                     parsed_json["features_importance_ranking"] = normalize_ranking_values(ranking)
                     replace_json_segment(current_entry, json_info, parsed_json)
                     cleaned_keys.add(key)
                     continue
             importance_mismatch_details.append(
-                {"key": key, "extra_features": extras_in_ranking}
+                {"key": key, "extra_features": sorted(extras_in_ranking)}
             )
             ranking_issue_keys.add(key)
             if clean:
                 keys_to_remove.add(key)
+            continue
+
+        # Check that ranking values are correctly numbered 1..K (with possible repetitions)
+        valid_ranking, reason = is_valid_ranking_sequence(ranking)
+        if not valid_ranking:
+            if clean:
+                # In clean mode, normalize the ranking to fix numbering
+                parsed_json["features_importance_ranking"] = normalize_ranking_values(ranking)
+                replace_json_segment(current_entry, json_info, parsed_json)
+                cleaned_keys.add(key)
+                continue
+
+            importance_mismatch_details.append(
+                {"key": key, "reason": f"Invalid ranking sequence: {reason}"}
+            )
+            ranking_issue_keys.add(key)
             continue
 
     # Calculate percentage
