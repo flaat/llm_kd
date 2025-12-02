@@ -142,7 +142,7 @@ class EnergyMonitor:
         pass
 
 
-def build_dataset_wor(model_name: str, temperature: float, top_p: float, dataset: str, max_tokens: int, repetition_penalty: float, max_model_len, analyze_feasibility: bool = False):
+def build_dataset_wor(model_name: str, temperature: float, top_p: float, dataset: str, max_tokens: int, repetition_penalty: float, max_model_len, analyze_feasibility: bool = True):
     set_full_reproducibility()
     
     LOWER_BOUND = 0
@@ -175,11 +175,14 @@ def build_dataset_wor(model_name: str, temperature: float, top_p: float, dataset
         max_num_seqs=1
     )
 
-    # Define output file for results
-    if not analyze_feasibility:
-        output_file = f"data/{dataset}_Worker_{model_name}.json"
-    else:
-        output_file = f"data/results/feasibility/build_Feasibility_{dataset}_Worker_{model_name}.json"
+    # Define output files
+    # Responses are always saved to data/ folder
+    responses_output_file = f"data/{dataset}_Worker_{model_name}.json"
+    # Feasibility statistics are saved to results/feasibility/ folder when needed
+    feasibility_output_file = f"results/feasibility/{dataset}_worker_{model_name}.json"
+    
+    # Ensure results/feasibility directory exists
+    os.makedirs("results/feasibility", exist_ok=True)
     
     responses = {}  # Dictionary to store new responses
     
@@ -262,9 +265,8 @@ def build_dataset_wor(model_name: str, temperature: float, top_p: float, dataset
 
                         print(generated_text)
                         
-                        # Store response data (only if not analyzing feasibility)
-                        if not analyze_feasibility:
-                            responses[i] = {"prompt": prompt, "generated_text": generated_text}
+                        # Always store response data
+                        responses[i] = {"prompt": prompt, "generated_text": generated_text}
                         
                         # Update statistics incrementally if analyzing feasibility
                         if analyze_feasibility:
@@ -290,9 +292,9 @@ def build_dataset_wor(model_name: str, temperature: float, top_p: float, dataset
 
                         print(f"#################### explanation #{i} - Time taken: {inference_time:.2f}s, Energy: {energy_consumed:.2f}J ###########################")
 
-                        # Save every 10 responses (only if not analyzing feasibility)
-                        if i % 10 == 0 and not analyze_feasibility:
-                            save_responses(responses, output_file)
+                        # Save responses every 10 iterations
+                        if i % 10 == 0:
+                            save_responses(responses, responses_output_file)
                             responses = {}  # Clear the temporary dictionary to prevent duplication
                         
                         # Save feasibility stats periodically (every 100 generations) to track progress
@@ -305,10 +307,12 @@ def build_dataset_wor(model_name: str, temperature: float, top_p: float, dataset
                         del generated_text
                         del outputs
                     i += 1
-    # Final save after loop completion
-    if not analyze_feasibility:
-        save_responses(responses, output_file)
-    else:
+    
+    # Final save of responses after loop completion
+    save_responses(responses, responses_output_file)
+    
+    # Save feasibility statistics if analyzing feasibility
+    if analyze_feasibility:
         # Calculate final statistics from incremental data
         if feasibility["num_generations"] > 0:
             n = feasibility["num_generations"]
@@ -331,9 +335,9 @@ def build_dataset_wor(model_name: str, temperature: float, top_p: float, dataset
             }
             
             # Save feasibility statistics
-            with open(output_file, 'w', encoding='utf-8') as f:
+            with open(feasibility_output_file, 'w', encoding='utf-8') as f:
                 json.dump(stats, f, indent=4)
-            print(f"✅ Feasibility statistics saved to {output_file}")
+            print(f"✅ Feasibility statistics saved to {feasibility_output_file}")
             
             # Print summary
             print(f"\n📊 Feasibility Summary:")
