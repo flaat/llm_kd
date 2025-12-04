@@ -7,7 +7,7 @@ import random
 import numpy as np
 import time
 import os
-from src.utils import MODEL_MAPPING
+from utils import MODEL_MAPPING
 import re
 from vllm.lora.request import LoRARequest
 
