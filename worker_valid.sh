@@ -1,20 +1,16 @@
 # Define an array of model names.
 model_list=(
-    #"unsloth_qwen3_0.6B"
-    #"unsloth_qwen3_1.7B"
-    "unsloth_qwen3_4B-Instruct"
-    #"unsloth_qwen3_4B-Thinking"
-    #"unsloth_qwen3_4B"
-    #"unsloth_llama_1B-Instruct"
-    #"unsloth_llama_3B-Instruct"
-    #"unsloth_qwen_0.5B"
-    #"unsloth_qwen_3B"
-    #"unsloth_deepseek_r1_qwen_1.5B"
-    #"unsloth_deepseek_r1_qwen_7B"
+    "unsloth_qwen_0.5B"
+    "unsloth_qwen3_0.6B"
+    "unsloth_deepseek_r1_qwen_1.5B"
+    "unsloth_qwen3_1.7B"
+    "unsloth_llama_3B-Instruct"
+    "unsloth_qwen_3B"
+    "unsloth_qwen3_4B-Thinking"
 )
 
 # Iterate over each model configuration and run main.py accordingly.
 for model in "${model_list[@]}"; do
     echo "Running validation.py with model '$model'..."
-    python validation.py --dataset=california --fine_tuned --worker_model_name="$model" --max_checkpoint=1375
+    python validation.py --dataset=adult --fine_tuned --worker_model_name="$model"
 done

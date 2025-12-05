@@ -1,3 +1,4 @@
+import unsloth
 import logging
 import io
 from transformers import AutoTokenizer
@@ -16,6 +17,7 @@ from src.utils import MODEL_MAPPING, prompt, prompt_ref
 import re
 from vllm.lora.request import LoRARequest
 import argparse
+from unsloth.chat_templates import get_chat_template
 
 def set_full_reproducibility(seed=42):
     random.seed(seed)
@@ -254,7 +256,21 @@ def validate_worker(model_name: str, dataset: str, temperature: float, top_p: fl
     base_prompt = prompt
     model_name = MODEL_MAPPING[model_name]
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+
+    tokenizer = get_chat_template(
+        tokenizer,
+        chat_template = "qwen-2.5", # Usa il template standard ChatML/Qwen
+    )
+
+    # Ensure the tokenizer has a valid pad_token and matches eos_token if missing
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    
+    # Safety check: If Unsloth/HF somehow set eos_token to the placeholder "<EOS_TOKEN>"
+    # which is not in the vocab, revert it to the standard eos_token_id
+    if tokenizer.eos_token == "<EOS_TOKEN>":
+        tokenizer.eos_token = tokenizer.decode(tokenizer.eos_token_id)
 
     sampling_params = SamplingParams(
         temperature=temperature, 
@@ -270,6 +286,10 @@ def validate_worker(model_name: str, dataset: str, temperature: float, top_p: fl
         checkpoint_steps.append(max_checkpoint)
 
     old_dataset_name = dataset
+    if dataset == "adult":
+        dataset = "adult income"
+    if dataset == "california":
+        dataset = "california housing"
     
     for checkpoint in checkpoint_steps:
 
@@ -303,13 +323,12 @@ def validate_worker(model_name: str, dataset: str, temperature: float, top_p: fl
         i = 0  # Counter for responses
 
         for dataset_name, examples in data.items():
-            if dataset == "adult":
-                dataset = "adult income"
-
+            output_directory = f"results/fine-tuning/worker_validation/{old_dataset_name}/{name}"
+            os.makedirs(output_directory, exist_ok=True)
+            output_file = f"{output_directory}/{name}_checkpoint_{checkpoint}.json"
+            
             if dataset_name.lower() == dataset:
-                output_directory = f"results/fine-tuning/worker_validation/{old_dataset_name}/{name}"
-                os.makedirs(output_directory, exist_ok=True)
-                output_file = f"{output_directory}/{name}_checkpoint_{checkpoint}.json"
+                
 
                 for index, values in examples.items():
                     for counterfactual in values["counterfactuals"]:
