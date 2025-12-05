@@ -146,8 +146,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         '--max_checkpoint',
         type=int,
-        default=1342,
-        help='Maximum number of checkpoints to save (default: 1342)'
+        default=None,
+        help='Maximum checkpoint number (auto-detected if not provided)'
     )
 
     return parser.parse_args()
@@ -201,6 +201,39 @@ def extract_feature_changes(factual, counterfactual):
 
     return {"feature_changes": feature_changes}
 
+def extract_max_checkpoint(output_dir: str) -> int:
+    """
+    Extracts the maximum checkpoint number from the output directory.
+    
+    Args:
+        output_dir: Path to the output directory containing checkpoint folders
+        
+    Returns:
+        The maximum checkpoint number found, or raises an error if none exists
+    """
+    if not os.path.exists(output_dir):
+        raise ValueError(f"Output directory does not exist: {output_dir}")
+    
+    checkpoint_dirs = [d for d in os.listdir(output_dir) if d.startswith('checkpoint-')]
+    
+    if not checkpoint_dirs:
+        raise ValueError(f"No checkpoint directories found in {output_dir}")
+    
+    # Extract numbers from checkpoint directory names and find the maximum
+    checkpoint_numbers = []
+    for checkpoint_dir in checkpoint_dirs:
+        try:
+            num = int(checkpoint_dir.split('-')[1])
+            checkpoint_numbers.append(num)
+        except (ValueError, IndexError):
+            continue
+    
+    if not checkpoint_numbers:
+        raise ValueError(f"No valid checkpoint numbers found in {output_dir}")
+    
+    return max(checkpoint_numbers)
+
+
 def extract_explanations(results: list[str]):
     """
     Extracts explanations from the generated outputs.
@@ -239,10 +272,17 @@ def extract_explanations(results: list[str]):
 
 
 
-def validate_worker(model_name: str, dataset: str, temperature: float, top_p: float, max_tokens: int, repetition_penalty: float, max_model_len, fine_tuned=True, checkpoint_every=50, max_checkpoint=1342):
+def validate_worker(model_name: str, dataset: str, temperature: float, top_p: float, max_tokens: int, repetition_penalty: float, max_model_len, fine_tuned=True, checkpoint_every=50, max_checkpoint=None):
+
+    set_full_reproducibility()
+    
+    # Auto-detect max_checkpoint if not provided
+    if max_checkpoint is None:
+        output_base_dir = f"outputs_unsloth/outputs_unsloth_{dataset}_worker/{model_name}"
+        max_checkpoint = extract_max_checkpoint(output_base_dir)
+        print(f"Auto-detected max_checkpoint: {max_checkpoint}")
 
     print(f"Params list: {model_name}, {temperature}, {top_p}, {max_tokens}, {repetition_penalty}, {max_model_len}, {fine_tuned}, {checkpoint_every}, {max_checkpoint}")
-    set_full_reproducibility()
 
     # Check if the checkpoint directory exists
     lora_max_checkpoint_directory_path = f"outputs_unsloth/outputs_unsloth_{dataset}_worker/{model_name}/checkpoint-{max_checkpoint}"
