@@ -296,21 +296,11 @@ def validate_worker(model_name: str, dataset: str, temperature: float, top_p: fl
     base_prompt = prompt
     model_name = MODEL_MAPPING[model_name]
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer = get_chat_template(
         tokenizer,
-        chat_template = "qwen-2.5", # Usa il template standard ChatML/Qwen
+        chat_template = "chatml",
     )
-
-    # Ensure the tokenizer has a valid pad_token and matches eos_token if missing
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-    
-    # Safety check: If Unsloth/HF somehow set eos_token to the placeholder "<EOS_TOKEN>"
-    # which is not in the vocab, revert it to the standard eos_token_id
-    if tokenizer.eos_token == "<EOS_TOKEN>":
-        tokenizer.eos_token = tokenizer.decode(tokenizer.eos_token_id)
 
     sampling_params = SamplingParams(
         temperature=temperature, 
@@ -320,6 +310,23 @@ def validate_worker(model_name: str, dataset: str, temperature: float, top_p: fl
         top_k=10,
         stop=tokenizer.eos_token
     )
+
+    # Initialize LLM with optimized GPU memory usage
+    if fine_tuned:
+        llm = LLM(
+        model=model_name, 
+        gpu_memory_utilization=0.3, 
+        max_model_len=max_model_len, 
+        max_num_seqs=1,
+        enable_lora=True,
+    )
+    else:
+        llm = LLM(
+            model=model_name, 
+            gpu_memory_utilization=0.7, 
+            max_model_len=max_model_len, 
+            max_num_seqs=1
+        )
 
     checkpoint_steps = list(range(checkpoint_every, max_checkpoint + 1, checkpoint_every))
     if checkpoint_steps[-1] != max_checkpoint:
@@ -335,24 +342,6 @@ def validate_worker(model_name: str, dataset: str, temperature: float, top_p: fl
 
         print(f"🔄 Loading checkpoint {checkpoint}...")
         lora_checkpoint_directory_path = f"outputs_unsloth/outputs_unsloth_{old_dataset_name}_worker/{name}/checkpoint-{checkpoint}"
-        
-        # Initialize LLM with optimized GPU memory usage
-        if fine_tuned:
-            llm = LLM(
-            model=model_name, 
-            gpu_memory_utilization=0.7, 
-            max_model_len=max_model_len, 
-            max_num_seqs=1,
-            enable_lora=True,
-            trust_remote_code=True
-        )
-        else:
-            llm = LLM(
-                model=model_name, 
-                gpu_memory_utilization=0.7, 
-                max_model_len=max_model_len, 
-                max_num_seqs=1
-            )
 
         # Define output file for results
         responses = {}  # Dictionary to store new responses
@@ -393,7 +382,13 @@ def validate_worker(model_name: str, dataset: str, temperature: float, top_p: fl
                                 with torch.no_grad():
                                     start_time = time.time()
                                     if fine_tuned:
-                                        outputs = llm.generate([text], sampling_params=sampling_params, lora_request=LoRARequest("counterfactual_explainability_adapter", 1, lora_checkpoint_directory_path))
+                                        adapter_name = f"counterfactual_explainability_adapter_{checkpoint}"
+                                        adapter_id = checkpoint  # unique id so vLLM does not reuse a cached adapter
+                                        outputs = llm.generate(
+                                            [text],
+                                            sampling_params=sampling_params,
+                                            lora_request=LoRARequest(adapter_name, adapter_id, lora_checkpoint_directory_path),
+                                        )
                                     else:
                                         outputs = llm.generate([text], sampling_params=sampling_params)
                                     end_time = time.time()
@@ -435,8 +430,8 @@ def validate_worker(model_name: str, dataset: str, temperature: float, top_p: fl
                         i += 1
 
         save_responses(responses, output_file)
-        del llm
-        torch.cuda.empty_cache()
+        #del llm
+        #torch.cuda.empty_cache()
 
 
 if __name__ == "__main__":

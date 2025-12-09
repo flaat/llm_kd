@@ -319,6 +319,8 @@ def check_truncated_generations(dataset: str, model: str, type_name: str, clean:
     cleaned_keys = set()
     cleaned_data = copy.deepcopy(data) if clean else None
     
+    prompt_tag_issue_count = 0
+    
     # Iterate through all entries
     for key, entry in data.items():
         if not isinstance(entry, dict):
@@ -326,6 +328,24 @@ def check_truncated_generations(dataset: str, model: str, type_name: str, clean:
         
         current_entry = cleaned_data[key] if clean else entry
         
+        # Check for prompt tags
+        prompt_text = current_entry.get("prompt", "")
+        if isinstance(prompt_text, str):
+            start_tag = "<|im_start|>user\n"
+            end_tag = "<|im_end|>\n<|im_start|>assistant\n"
+            has_start = prompt_text.startswith(start_tag)
+            has_end = prompt_text.endswith(end_tag)
+            
+            if has_start or has_end:
+                prompt_tag_issue_count += 1
+                if clean:
+                    if has_start:
+                        prompt_text = prompt_text[len(start_tag):]
+                    if has_end:
+                        prompt_text = prompt_text[:-len(end_tag)]
+                    current_entry["prompt"] = prompt_text
+                    cleaned_keys.add(key)
+
         if "generated_text" not in current_entry:
             print(f"⚠️  Warning: Entry '{key}' missing 'generated_text' field. Skipping.")
             if clean:
@@ -520,8 +540,9 @@ def check_truncated_generations(dataset: str, model: str, type_name: str, clean:
     print(f"      - Mixed issues: {mixed_mismatch_count}")
     print(f"      - Target variable mismatch: {target_only_count}")
     print(f"   Ranking mismatches: {len(ranking_issue_keys)}")
+    print(f"   Prompt tag issues: {prompt_tag_issue_count}")
     if clean:
-        print(f"   Entries cleaned (extra features removed): {len(cleaned_keys)}")
+        print(f"   Entries cleaned (features/ranking/prompt): {len(cleaned_keys)}")
         print(f"   Entries removed: {len(keys_to_remove)}")
     
     if ground_truth_fail:

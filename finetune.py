@@ -21,14 +21,11 @@ import json
 import os
 from pathlib import Path
 from typing import Dict, List, Tuple, Any, Optional
-
-# UPDATED: unsloth must be imported BEFORE trl/transformers to avoid patching issues
 from unsloth import FastLanguageModel, is_bfloat16_supported
 import torch
 from datasets import Dataset
-from trl import SFTTrainer, SFTConfig
-
-# Assumes src.utils exists in your project structure
+from trl import SFTTrainer
+from transformers import TrainingArguments
 from src.utils import MODEL_MAPPING
 
 # Constants
@@ -54,16 +51,6 @@ def load_model_and_tokenizer(model_name: str) -> Tuple[Any, Any]:
         load_in_4bit=LOAD_IN_4BIT,
     )
     
-    # UPDATED: Fix for Qwen/Missing EOS token issues
-    # Ensure the tokenizer has a valid pad_token and matches eos_token if missing
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-    
-    # Safety check: If Unsloth/HF somehow set eos_token to the placeholder "<EOS_TOKEN>" 
-    # which is not in the vocab, revert it to the standard eos_token_id
-    if tokenizer.eos_token == "<EOS_TOKEN>":
-        tokenizer.eos_token = tokenizer.decode(tokenizer.eos_token_id)
-
     # Configure for LoRA fine-tuning
     model = FastLanguageModel.get_peft_model(
         model,
@@ -142,44 +129,44 @@ def create_formatting_function(tokenizer):
 def setup_trainer(model, tokenizer, dataset, output_dir: str) -> SFTTrainer:
     """
     Configure and create the SFT trainer for fine-tuning.
-    Compatible with trl >= 0.24.0.
-    """
     
-    # UPDATED: Use SFTConfig instead of TrainingArguments
-    # SFTConfig inherits from TrainingArguments but adds SFT-specific params
-    # like max_seq_length, dataset_text_field, and packing.
-    sft_config = SFTConfig(
-        output_dir=output_dir,
-        dataset_text_field="text",          # Moved from SFTTrainer init
-        max_seq_length=MAX_SEQ_LENGTH,      # Moved from SFTTrainer init
-        dataset_num_proc=8,                 # Moved from SFTTrainer init
-        packing=False,                      # Moved from SFTTrainer init
-        per_device_train_batch_size=1,
-        gradient_accumulation_steps=32,
-        warmup_ratio=0.075,
-        num_train_epochs=1,
-        learning_rate=2e-4,
-        overwrite_output_dir=False,
-        fp16=not is_bfloat16_supported(),
-        bf16=is_bfloat16_supported(),
-        logging_steps=1,
-        optim="adamw_8bit",
-        weight_decay=0.01,
-        lr_scheduler_type="linear",
-        seed=3407,
-        report_to="none",                   # Set to "wandb" for Weights & Biases logging
-        save_strategy="steps",
-        save_steps=50
-    )
-
-    trainer = SFTTrainer(
+    Args:
+        model: Model to be fine-tuned
+        tokenizer: Tokenizer for text processing
+        dataset: Dataset containing formatted training examples
+        output_dir: Directory to save model checkpoints
+        
+    Returns:
+        Configured SFTTrainer instance
+    """
+    return SFTTrainer(
         model=model,
+        tokenizer=tokenizer,
         train_dataset=dataset,
-        args=sft_config,                    # Pass the SFTConfig
-        processing_class=tokenizer,         # UPDATED: 'tokenizer' arg is removed in 0.24, use 'processing_class'
+        dataset_text_field="text",
+        max_seq_length=MAX_SEQ_LENGTH,
+        dataset_num_proc=8,
+        packing=False,  # Packing can make training faster for short sequences
+        args=TrainingArguments(
+            per_device_train_batch_size=1,
+            gradient_accumulation_steps=32,
+            warmup_ratio=0.075,
+            num_train_epochs=1,
+            learning_rate=2e-4,
+            overwrite_output_dir=False,
+            fp16=not is_bfloat16_supported(),
+            bf16=is_bfloat16_supported(),
+            logging_steps=1,
+            optim="adamw_8bit",
+            weight_decay=0.01,
+            lr_scheduler_type="linear",
+            seed=3407,
+            output_dir=output_dir,
+            report_to="none",  # Set to "wandb" for Weights & Biases logging
+            save_strategy="steps",
+            save_steps=50
+        ),
     )
-
-    return trainer
 
 
 def print_memory_stats(start_gpu_memory: float, trainer_stats: Optional[Any] = None):
@@ -224,7 +211,7 @@ def main(model_name: str, dataset_name: str, refiner: bool) -> None:
     
     # Load dataset
     if refiner:
-        json_file_path = f"data/{dataset_name}_refiner_qwen3_30B_A3B_cleaned.json"
+        json_file_path = f"data/{dataset_name}_Refiner_cleaned.json"
     else:
         json_file_path = f"data/{dataset_name}_worker_qwen3_30B_A3B_cleaned.json"
     dataset = load_json_to_hf_dataset(json_file_path)
