@@ -297,10 +297,6 @@ def validate_worker(model_name: str, dataset: str, temperature: float, top_p: fl
     model_name = MODEL_MAPPING[model_name]
 
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-    tokenizer = get_chat_template(
-        tokenizer,
-        chat_template = "chatml",
-    )
 
     sampling_params = SamplingParams(
         temperature=temperature, 
