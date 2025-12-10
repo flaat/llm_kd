@@ -1,11 +1,13 @@
 # Define an array of model names.
 model_list=(
-    #"unsloth_qwen_0.5B"
-    #"unsloth_deepseek_r1_qwen_1.5B"
-    #"unsloth_qwen_3B"
-    #"unsloth_deepseek_r1_qwen_7B",
-    "deepseek_r1_qwen_32B_Q4_AWQ1"
-
+    "unsloth_qwen_0.5B"
+    "unsloth_qwen3_0.6B"
+    "unsloth_llama_1B-Instruct"
+    "unsloth_deepseek_r1_qwen_1.5B"
+    "unsloth_qwen3_1.7B"
+    "unsloth_llama_3B-Instruct"
+    "unsloth_qwen_3B"
+    "unsloth_qwen3_4B-Instruct"
 )
 
 # Iterate over each model configuration and run main.py accordingly.

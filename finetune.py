@@ -22,7 +22,7 @@ import os
 from pathlib import Path
 from typing import Dict, List, Tuple, Any, Optional
 
-from unsloth import FastLanguageModel, is_bfloat16_supported
+from unsloth import FastLanguageModel, is_bfloat16_supported, get_chat_template
 from unsloth.chat_templates import train_on_responses_only
 import torch
 from datasets import Dataset
@@ -232,6 +232,12 @@ def main(model_name: str, dataset_name: str, refiner: bool) -> None:
     """
     # Load model and tokenizer
     model, tokenizer = load_model_and_tokenizer(model_name)
+
+    # Attach the proper chat template to the tokenizer
+    if "qwen" in model_name:
+        tokenizer = get_chat_template(tokenizer, chat_template="qwen25")
+    elif "llama" in model_name:
+        tokenizer = get_chat_template(tokenizer, chat_template="llama-31")
     
     # Load dataset
     if refiner:
@@ -243,6 +249,8 @@ def main(model_name: str, dataset_name: str, refiner: bool) -> None:
     # Create formatting function and process dataset
     formatting_func = create_formatting_function(tokenizer)
     formatted_dataset = dataset.map(formatting_func, batched=False)
+    #Print the first example of the formatted dataset
+    print(formatted_dataset[0])
     
     # Prepare output directory
 

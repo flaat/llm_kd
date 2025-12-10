@@ -376,12 +376,13 @@ def parse_args():
 	parser.add_argument("--models", nargs="+",
 					default=[
 						"unsloth_qwen_0.5B",
-                        #"unsloth_qwen3_0.6B",
-						#"unsloth_deepseek_r1_qwen_1.5B",
-                        #"unsloth_qwen3_1.7B",
-                        #"unsloth_llama_3B-Instruct",
-                        #"unsloth_qwen_3B",
-						#"unsloth_qwen3_4B-Thinking",  
+                        "unsloth_qwen3_0.6B",
+						"unsloth_llama_1B-Instruct",
+						"unsloth_deepseek_r1_qwen_1.5B",
+                        "unsloth_qwen3_1.7B",
+                        "unsloth_llama_3B-Instruct",
+                        "unsloth_qwen_3B",
+						"unsloth_qwen3_4B-Instruct",  
                     ], help="Models to include (space-separated list).")
 	parser.add_argument("--max-examples", type=int, default=200, help="Max examples per checkpoint file to evaluate.")
 	parser.add_argument("--output-dir", type=Path, default=None, help="Root directory for outputs; defaults to base_dir/<dataset>/<model>.")
