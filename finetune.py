@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Any, Optional
 
 from unsloth import FastLanguageModel, is_bfloat16_supported
+from unsloth.chat_templates import train_on_responses_only
 import torch
 from datasets import Dataset
 from trl import SFTTrainer, SFTConfig
@@ -138,7 +139,7 @@ def setup_trainer(model, tokenizer, dataset, output_dir: str) -> SFTTrainer:
         output_dir=output_dir,
         dataset_text_field="text",          
         max_seq_length=MAX_SEQ_LENGTH,      
-        dataset_num_proc=8,                 
+        dataset_num_proc=1,                 
         packing=False,                      
         per_device_train_batch_size=1,
         gradient_accumulation_steps=32,
@@ -166,6 +167,30 @@ def setup_trainer(model, tokenizer, dataset, output_dir: str) -> SFTTrainer:
     )
 
     return trainer
+
+
+def get_response_only_kwargs(model_name: str) -> Optional[Dict[str, str]]:
+    """
+    Return instruction/response delimiters so loss is computed only on assistant
+    replies. The spans must match the chat template emitted by the tokenizer.
+    """
+    name = model_name.lower()
+
+    # Qwen2.5 / Qwen3 (unsloth) use <|im_start|> markers.
+    if "qwen" in name:
+        return {
+            "instruction_part": "<|im_start|>user",
+            "response_part": "<|im_start|>assistant",
+        }
+
+    # Llama 3.2 uses start/end header ids around roles.
+    if "llama" in name:
+        return {
+            "instruction_part": "<|start_header_id|>user<|end_header_id|>",
+            "response_part": "<|start_header_id|>assistant<|end_header_id|>",
+        }
+
+    return None
 
 
 def print_memory_stats(start_gpu_memory: float, trainer_stats: Optional[Any] = None):
@@ -229,6 +254,12 @@ def main(model_name: str, dataset_name: str, refiner: bool) -> None:
     
     # Set up trainer
     trainer = setup_trainer(model, tokenizer, formatted_dataset, output_dir)
+
+    # Mask loss to assistant responses only (prevent user prompt tokens from
+    # contributing to loss). Defaults to full-text loss when no mapping exists.
+    response_only_kwargs = get_response_only_kwargs(model_name)
+    if response_only_kwargs:
+        trainer = train_on_responses_only(trainer, **response_only_kwargs)
     
     # Record initial memory usage
     start_gpu_memory = round(torch.cuda.max_memory_reserved() / 1024 / 1024 / 1024, 3)
