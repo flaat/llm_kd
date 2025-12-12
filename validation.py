@@ -311,7 +311,7 @@ def validate_worker(model_name: str, dataset: str, temperature: float, top_p: fl
     if fine_tuned:
         llm = LLM(
         model=model_name, 
-        gpu_memory_utilization=0.3, 
+        gpu_memory_utilization=0.5, 
         max_model_len=max_model_len, 
         max_num_seqs=1,
         enable_lora=True,
