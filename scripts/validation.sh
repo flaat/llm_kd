@@ -1,3 +1,15 @@
+#!/bin/bash
+# Validate fine-tuned models in batch
+# Usage: bash scripts/validation.sh
+
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Get the project root (parent of scripts directory)
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Change to project root so relative paths work
+cd "$PROJECT_ROOT"
+
 # Define an array of model names.
 model_list=(
     "unsloth_qwen_0.5B"
@@ -10,8 +22,9 @@ model_list=(
     "unsloth_qwen3_4B-Instruct"
 )
 
-# Iterate over each model configuration and run main.py accordingly.
+# Iterate over each model configuration and run validation.py accordingly.
 for model in "${model_list[@]}"; do
     echo "Running validation.py with model '$model'..."
     python validation.py --dataset=adult --fine_tuned --worker_model_name="$model"
 done
+
