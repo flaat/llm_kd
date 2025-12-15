@@ -145,7 +145,6 @@ def display_config(args: argparse.Namespace) -> None:
     print(f"Num narratives (worker -> refiner): {args.num_narratives}")
     print("\n----- Experiment Settings -----")
     print(f"Dataset:             {args.dataset}")
-    print(f"Testing LLM:         {'Yes' if args.test_llm else 'No'}")
     print("=============================================\n")
 
 

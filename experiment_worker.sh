@@ -13,4 +13,5 @@ model_list=(
 for model in "${model_list[@]}"; do
     echo "Running experiment.py with model '$model'..."
     python experiment.py  --dataset=adult --worker_model_name="$model" --analyze_feasibility
+    python experiment.py  --dataset=adult --worker_model_name="$model" --analyze_feasibility --worker_fine_tuned
 done
