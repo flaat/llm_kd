@@ -12,6 +12,6 @@ model_list=(
 
 # Iterate over each model configuration and run main.py accordingly.
 for model in "${model_list[@]}"; do
-    echo "Running main.py with model '$model'..."
-    python main.py  --dataset=adult --worker_model_name="$model" --test_llm --analyze_feasibility
+    echo "Running validation.py with model '$model'..."
+    python validation.py --dataset=adult --fine_tuned --worker_model_name="$model"
 done

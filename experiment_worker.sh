@@ -7,11 +7,10 @@ model_list=(
     "unsloth_qwen3_1.7B"
     "unsloth_llama_3B-Instruct"
     "unsloth_qwen_3B"
-    "unsloth_qwen3_4B-Instruct"
 )
 
-# Iterate over each model configuration and run main.py accordingly.
+# Iterate over each model configuration and run experiment.py accordingly.
 for model in "${model_list[@]}"; do
-    echo "Running validation.py with model '$model'..."
-    python validation.py --dataset=titanic --fine_tuned --worker_model_name="$model"
+    echo "Running experiment.py with model '$model'..."
+    python experiment.py  --dataset=adult --worker_model_name="$model" --analyze_feasibility
 done

@@ -12,11 +12,11 @@ refiner_model_list=(
     #"unsloth_deepseek_r1_qwen_7B"
 )
 
-# Iterate over each model configuration and run main.py accordingly.
+# Iterate over each model configuration and run experiment.py accordingly.
 for worker_model in "${worker_model_list[@]}"; do
-    echo "⚙️ Running main.py with worker model '$worker_model'..."
+    echo "⚙️ Running experiment.py with worker model '$worker_model'..."
     for refiner_model in "${refiner_model_list[@]}"; do
         echo "⚙️⚙️ Using refiner model '$refiner_model'..."
-        python main.py --test_llm --dataset="adult" --worker_model_name="$worker_model" --refiner_model_name="$refiner_model" --refiner --fine_tuned --analyze_feasibility
+        python experiment.py --test_llm --dataset="adult" --worker_model_name="$worker_model" --refiner_model_name="$refiner_model" --refiner --fine_tuned --analyze_feasibility
     done
 done

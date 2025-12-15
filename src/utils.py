@@ -64,6 +64,74 @@ GOOGLE_API_MODEL_MAPPING = {
 }
 
 
+# Mapping from dataset / role / model_name to LoRA checkpoint step.
+# Roles:
+#   - "draft_generator": worker that generates draft explanations
+#   - "refiner": model that refines/aggregates drafts
+CHECKPOINT_MAPPING = {
+    "adult": {
+        "draft_generator": {
+            "unsloth_qwen_0.5B": 500,
+            "unsloth_qwen3_0.6B": 500,
+            "unsloth_llama_1B-Instruct": 250,
+            "unsloth_deepseek_r1_qwen_1.5B": 500,
+            "unsloth_qwen3_1.7B": 500,
+            "unsloth_llama_3B-Instruct": 500,
+            "unsloth_qwen_3B": 500,
+            "unsloth_qwen3_4B-Instruct": 500,
+        },
+        "refiner": {
+            "unsloth_qwen_0.5B": 800,
+        },
+    },
+    "california": {
+        "draft_generator": {
+            "unsloth_qwen_0.5B": 500,
+        },
+        "refiner": {
+            "unsloth_qwen_0.5B": 800,
+        },
+    },
+    "titanic": {
+        "draft_generator": {
+            "unsloth_qwen_0.5B": 500,
+        },
+        "refiner": {
+            "unsloth_qwen_0.5B": 800,
+        },
+    },
+    "diabetes": {
+        "draft_generator": {
+            "unsloth_qwen_0.5B": 500,
+        },
+        "refiner": {
+            "unsloth_qwen_0.5B": 800,
+        },
+    },
+}
+
+
+def get_checkpoint_step(dataset_name: str, role: str, model_name: str, default: int = 500) -> int:
+    """
+    Retrieve the checkpoint step for a given (dataset, role, model_name) triple.
+
+    Args:
+        dataset_name: e.g. \"adult\", \"california\", \"titanic\", \"diabetes\".
+        role: \"draft_generator\" or \"refiner\".
+        model_name: logical model identifier (e.g. \"unsloth_qwen_0.5B\").
+        default: value to return if combination is not found.
+    """
+    try:
+        return CHECKPOINT_MAPPING[dataset_name][role][model_name]
+    except KeyError:
+        print(
+            f"[CHECKPOINT] Warning: no checkpoint mapping for "
+            f"dataset='{dataset_name}', role='{role}', model='{model_name}'. "
+            f"Using default step {default}."
+        )
+        return default
+
+
 prompt = """
 A counterfactual explanation refers to a type of explanation in machine learning and artificial intelligence that describes how altering certain input features can change the output of a model. It answers 'what if' scenarios by identifying minimal changes necessary to achieve a different desired outcome. Counterfactual explanations provide insights into the decision-making process of complex models, enhancing transparency and interpretability.
 For example, consider a credit scoring model that denies a loan application. A counterfactual explanation might be: 'If your annual income had been $50,000 instead of $45,000, your loan would have been approved.' This helps the applicant understand what specific change could lead to a different decision.

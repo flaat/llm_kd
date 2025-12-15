@@ -12,7 +12,7 @@ import os
 import subprocess
 import threading
 from data.dataset_kb import dataset_kb
-from .utils import MODEL_MAPPING, prompt, prompt_ref
+from .utils import MODEL_MAPPING, prompt, prompt_ref, get_checkpoint_step
 import re
 from vllm.lora.request import LoRARequest
 
@@ -265,74 +265,150 @@ def get_gpu_memory_usage():
     return 0
 
 
-def test_llm(model_name: str, dataset: str, temperature: float, top_p: float, max_tokens: int, repetition_penalty: float, max_model_len, fine_tuned=False, analyze_feasibility=False):
+def test_llm(
+    worker_model_name: str,
+    refiner_model_name: str | None,
+    dataset: str,
+    temperature: float,
+    top_p: float,
+    max_tokens: int,
+    repetition_penalty: float,
+    max_model_len,
+    refiner: bool = False,
+    worker_fine_tuned: bool = False,
+    refiner_fine_tuned: bool = False,
+    analyze_feasibility: bool = False,
+    num_narratives: int = 3,
+):
+    """
+    Unified entrypoint for running LLM experiments.
 
-    print(f"Params list: {model_name}, {temperature}, {top_p}, {max_tokens}, {repetition_penalty}, {max_model_len}, {fine_tuned}, {analyze_feasibility}")
+    If `refiner` is False, runs the single-model pipeline (former `test_llm`)
+    using `worker_model_name`.
+
+    If `refiner` is True, runs the worker+refiner pipeline (former
+    `test_llm_refiner`) using both `worker_model_name` and `refiner_model_name`.
+    """
+
+    print(
+        "[CONFIG] Params: "
+        f"worker_model={worker_model_name}, refiner_model={refiner_model_name}, "
+        f"dataset={dataset}, temperature={temperature}, top_p={top_p}, "
+        f"max_tokens={max_tokens}, repetition_penalty={repetition_penalty}, "
+        f"max_model_len={max_model_len}, "
+        f"worker_fine_tuned={worker_fine_tuned}, refiner_fine_tuned={refiner_fine_tuned}, "
+        f"refiner={refiner}, analyze_feasibility={analyze_feasibility}"
+    )
     set_full_reproducibility()
-    
+
+    if not refiner:
+        _run_worker_only_pipeline(
+            worker_model_name=worker_model_name,
+            dataset=dataset,
+            temperature=temperature,
+            top_p=top_p,
+            max_tokens=max_tokens,
+            repetition_penalty=repetition_penalty,
+            max_model_len=max_model_len,
+            worker_fine_tuned=worker_fine_tuned,
+            analyze_feasibility=analyze_feasibility,
+        )
+    else:
+        if refiner_model_name is None:
+            refiner_model_name = worker_model_name
+
+        _run_worker_refiner_pipeline(
+            worker_model_name=worker_model_name,
+            refiner_model_name=refiner_model_name,
+            dataset=dataset,
+            temperature=temperature,
+            top_p=top_p,
+            max_tokens=max_tokens,
+            repetition_penalty=repetition_penalty,
+            max_model_len=max_model_len,
+            worker_fine_tuned=worker_fine_tuned,
+            refiner_fine_tuned=refiner_fine_tuned,
+            analyze_feasibility=analyze_feasibility,
+            num_narratives=num_narratives,
+        )
+
+
+def _run_worker_only_pipeline(
+    worker_model_name: str,
+    dataset: str,
+    temperature: float,
+    top_p: float,
+    max_tokens: int,
+    repetition_penalty: float,
+    max_model_len,
+    worker_fine_tuned: bool,
+    analyze_feasibility: bool,
+):
+    """Former `test_llm` pipeline (single model, no refiner)."""
+
     LOWER_BOUND = 1
-    UPPER_BOUND = 100
-    name = model_name
+    UPPER_BOUND = 200
+    logical_name = worker_model_name
     global prompt
     base_prompt = prompt
-    model_name = MODEL_MAPPING[model_name]
+    mapped_model_name = MODEL_MAPPING[worker_model_name]
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    print(f"[WORKER] Loading tokenizer and model '{logical_name}' ({mapped_model_name})...")
+    tokenizer = AutoTokenizer.from_pretrained(mapped_model_name)
     sampling_params = SamplingParams(
-        temperature=temperature, 
-        top_p=top_p, 
-        repetition_penalty=repetition_penalty, 
-        max_tokens=max_tokens, 
+        temperature=temperature,
+        top_p=top_p,
+        repetition_penalty=repetition_penalty,
+        max_tokens=max_tokens,
         top_k=10,
-        stop=tokenizer.eos_token
+        stop=tokenizer.eos_token,
     )
 
     # Calculate model disk size using vLLM log capture
     log_capture = VLLMLogCapture()
-    
+
     # Measure model loading time
-    print("🔄 Loading model...")
+    print("[WORKER] 🔄 Loading model...")
     model_load_start = time.time()
-    
+
     # Setup log capture before model loading
     handler = log_capture.capture_logs()
-    
+
     # Initialize LLM with optimized GPU memory usage
-    if fine_tuned:
-        llm = LLM(
-        model=model_name, 
-        gpu_memory_utilization=0.8, 
-        max_model_len=max_model_len, 
+    llm = LLM(
+        model=mapped_model_name,
+        gpu_memory_utilization=0.6,
+        max_model_len=max_model_len,
         max_num_seqs=1,
-        enable_lora=True
+        enable_lora=worker_fine_tuned,
     )
-    else:
-        llm = LLM(
-            model=model_name, 
-            gpu_memory_utilization=0.8, 
-            max_model_len=max_model_len, 
-            max_num_seqs=1
-        )
-    
+
     model_load_end = time.time()
     model_loading_time = model_load_end - model_load_start
-    
+
     # Extract model size from logs
     model_disk_size_gb = log_capture.extract_model_size(handler)
-    
-    print(f"📊 Model loading time: {model_loading_time:.2f} seconds")
-    print(f"📊 Model weight size: {model_disk_size_gb:.4f} GB")
-    
+
+    print(f"[WORKER] 📊 Model loading time: {model_loading_time:.2f} seconds")
+    print(f"[WORKER] 📊 Model weight size: {model_disk_size_gb:.4f} GB")
+
     # Get GPU memory usage after model loading
     gpu_memory_usage_gb = get_gpu_memory_usage()
-    print(f"📊 GPU memory usage after loading: {gpu_memory_usage_gb:.2f} GB")
+    print(f"[WORKER] 📊 GPU memory usage after loading: {gpu_memory_usage_gb:.2f} GB")
 
-
-    lora_checkpoint_directory_path = f"outputs_unsloth_titanic/{name}/checkpoint-500"
+    # LoRA checkpoint (only used if worker_fine_tuned is True)
+    checkpoint_step = get_checkpoint_step(dataset, "draft_generator", logical_name, default=500)
+    lora_checkpoint_directory_path = (
+        f"outputs_unsloth/outputs_unsloth_{dataset}_worker/{logical_name}/checkpoint-{checkpoint_step}"
+    )
+    print(
+        f"[CHECKPOINT] Worker draft generator checkpoint: "
+        f"dataset={dataset}, model={logical_name}, step={checkpoint_step}"
+    )
 
     # Define output file for results
     responses = {}  # Dictionary to store new responses
-    feasibility = { # Dictionary to store feasibility results
+    feasibility = {  # Dictionary to store feasibility results
         "loading_time": model_loading_time,
         "model_weight_size_gb": model_disk_size_gb,
         "gpu_memory_usage_gb": gpu_memory_usage_gb,
@@ -343,85 +419,136 @@ def test_llm(model_name: str, dataset: str, temperature: float, top_p: float, ma
     }
 
     # Load counterfactual data
-    with open(f"src/explainer/test_counterfactuals.json", 'r', encoding='utf-8') as file1:
+    with open("src/explainer/test_counterfactuals.json", "r", encoding="utf-8") as file1:
         data1 = json.load(file1)
 
     i = 0  # Counter for responses
+    NUM_FACTUALS = 40  # Number of factuals to process
+    NUM_COUNTERFACTUALS_PER_FACTUAL = 5  # Number of counterfactuals per factual
+    if NUM_FACTUALS * NUM_COUNTERFACTUALS_PER_FACTUAL != UPPER_BOUND:
+        raise ValueError(f"NUM_FACTUALS * NUM_COUNTERFACTUALS_PER_FACTUAL must be {UPPER_BOUND}")
 
     for dataset_name, examples in data1.items():
-        if dataset == "adult":
-            dataset = "adult income"
+        dataset_key = dataset
+        if dataset_key == "adult":
+            dataset_key = "adult income"
 
-        if dataset_name.lower() == dataset:
+        if dataset_name.lower() == dataset_key:
+            # Ensure output directory structure
+            base_dir = os.path.join(
+                "results",
+                "draft_generator",
+                dataset_name,
+                logical_name,
+            )
+            os.makedirs(base_dir, exist_ok=True)
+
+            # Define output files
             if not analyze_feasibility:
-                output_file = f"data/results/{model_name.split('/')[-1]}_Response_{dataset_name}_Finetuned_{fine_tuned}.json"
-            else: 
-                output_file = f"data/results/Feasibility_{model_name.split('/')[-1]}_{dataset_name}_Finetuned_{fine_tuned}.json"
+                output_file = os.path.join(
+                    base_dir,
+                    f"{logical_name}_response_finetuned_{worker_fine_tuned}.json",
+                )
+                feasibility_output_file = None
+            else:
+                # When analyzing feasibility, save both test results and feasibility metrics
+                output_file = os.path.join(
+                    base_dir,
+                    f"{logical_name}_response_finetuned_{worker_fine_tuned}.json",
+                )
+                feasibility_dir = os.path.join(
+                    base_dir,
+                    "feasibility",
+                )
+                os.makedirs(feasibility_dir, exist_ok=True)
+                feasibility_output_file = os.path.join(
+                    feasibility_dir,
+                    f"{logical_name}_feasibility_response_finetuned_{worker_fine_tuned}.json",
+                )
 
-            for index, values in examples.items():
-                for counterfactual in values["counterfactuals"]:
-                    
+            print(f"[IO] Test results output file: {output_file}")
+            if feasibility_output_file:
+                print(f"[IO] Feasibility metrics output file: {feasibility_output_file}")
+            print(f"[CONFIG] Processing {NUM_FACTUALS} factuals with {NUM_COUNTERFACTUALS_PER_FACTUAL} counterfactuals each (total: {NUM_FACTUALS * NUM_COUNTERFACTUALS_PER_FACTUAL} iterations)")
+
+            # Sort indices to ensure consistent ordering (indices are strings like "0", "1", etc.)
+            sorted_indices = sorted(examples.keys(), key=lambda x: int(x))[:NUM_FACTUALS]
+            
+            for index in sorted_indices:
+                values = examples[index]
+                # Process only the first NUM_COUNTERFACTUALS_PER_FACTUAL counterfactuals
+                counterfactuals_to_process = values["counterfactuals"][:NUM_COUNTERFACTUALS_PER_FACTUAL]
+                
+                for counterfactual in counterfactuals_to_process:
                     if LOWER_BOUND <= i <= UPPER_BOUND:
-                        
                         current_prompt = base_prompt.format(
-                            dataset_description=dataset_kb[dataset_name], 
-                            factual_example=str(values["factual"]), 
-                            counterfactual_example=str(counterfactual)
+                            dataset_description=dataset_kb[dataset_name],
+                            factual_example=str(values["factual"]),
+                            counterfactual_example=str(counterfactual),
                         )
 
                         messages = [{"role": "user", "content": current_prompt}]
-                        
+
                         text = tokenizer.apply_chat_template(
                             messages,
                             tokenize=False,
-                            add_generation_prompt=True
+                            add_generation_prompt=True,
                         )
                         try:
-                            # Initialize energy monitor
                             energy_monitor = EnergyMonitor()
-                            
+
                             with torch.no_grad():
                                 # Start energy monitoring and time measurement
                                 energy_monitor.start_monitoring()
                                 start = time.time()
-                                
-                                if fine_tuned:
-                                    outputs = llm.generate([text], sampling_params=sampling_params, lora_request=LoRARequest("counterfactual_explainability_adapter", 1, lora_checkpoint_directory_path))
+
+                                if worker_fine_tuned:
+                                    outputs = llm.generate(
+                                        [text],
+                                        sampling_params=sampling_params,
+                                        lora_request=LoRARequest(
+                                            "counterfactual_explainability_adapter",
+                                            1,
+                                            lora_checkpoint_directory_path,
+                                        ),
+                                    )
                                 else:
                                     outputs = llm.generate([text], sampling_params=sampling_params)
-                                
+
                                 end = time.time()
                                 energy_metrics = energy_monitor.stop_monitoring()
-                                
+
                         except AssertionError as assert_e:
-                            print(f"🚨 Assertion error: {assert_e}")
+                            print(f"[WORKER] 🚨 Assertion error: {assert_e}")
                             continue
-                        
+
                         # Calculate metrics
                         inference_time = end - start
-                        energy_consumed = energy_metrics['energy_joules']
-                        average_power = energy_metrics['average_power_watts']
-                        power_samples_tot = energy_metrics['power_samples']
-                        power_samples = []
-                        for j in range(len(power_samples_tot)):
-                            power_samples.append(power_samples_tot[j][1])
+                        energy_consumed = energy_metrics["energy_joules"]
+                        average_power = energy_metrics["average_power_watts"]
+                        power_samples_tot = energy_metrics["power_samples"]
+                        power_samples = [sample[1] for sample in power_samples_tot]
 
                         # Process the outputs if generated successfully
                         for output in outputs:
-                            prompt = output.prompt
+                            prompt_out = output.prompt
                             generated_text = output.outputs[0].text
 
+                        print(f"[WORKER] Generated explanation #{i}:")
                         print(generated_text)
-                        
+
                         # Store response with metrics
                         response_data = {
-                            "generated_text": generated_text, 
-                            "prompt": prompt, 
-                            "ground_truth": {"counterfactual":counterfactual, "factual": values["factual"]}, 
+                            "generated_text": generated_text,
+                            "prompt": prompt_out,
+                            "ground_truth": {
+                                "counterfactual": counterfactual,
+                                "factual": values["factual"],
+                            },
                             "changes": extract_feature_changes(values["factual"], counterfactual),
                         }
                         responses[i] = response_data
-                        
+
                         # Store metrics in feasibility dictionary if analyzing feasibility
                         if analyze_feasibility:
                             feasibility["inference_time"].append(inference_time)
@@ -429,10 +556,14 @@ def test_llm(model_name: str, dataset: str, temperature: float, top_p: float, ma
                             feasibility["average_power"].append(average_power)
                             feasibility["power_samples"].append(power_samples)
 
-                        print(f"#################### explanation #{i} - Time taken: {inference_time:.2f}s, Energy: {energy_consumed:.2f}J, Avg Power: {average_power:.2f}W ###########################")
+                        print(
+                            f"[WORKER] #################### explanation #{i} - "
+                            f"Time: {inference_time:.2f}s, Energy: {energy_consumed:.2f}J, "
+                            f"Avg Power: {average_power:.2f}W ###########################"
+                        )
 
-                        # Save every 10 responses
-                        if i % 10 == 0 and not analyze_feasibility:
+                        # Save every 10 responses (always save test results)
+                        if i % 10 == 0:
                             save_responses(responses, output_file)
                             responses = {}  # Clear the temporary dictionary to prevent duplication
 
@@ -440,74 +571,119 @@ def test_llm(model_name: str, dataset: str, temperature: float, top_p: float, ma
                         del generated_text
                         del outputs
                     i += 1
+
     # Final save after loop completion
-    if not analyze_feasibility:
-        save_responses(responses, output_file)
-    else:
+    # Always save test results
+    save_responses(responses, output_file)
+    
+    # If analyzing feasibility, also save feasibility metrics to separate file
+    if analyze_feasibility:
         # Calculate statistics before saving
         if feasibility["inference_time"]:
             feasibility["inference_time_stats"] = {
                 "mean": float(np.mean(feasibility["inference_time"])),
                 "std": float(np.std(feasibility["inference_time"])),
                 "min": float(np.min(feasibility["inference_time"])),
-                "max": float(np.max(feasibility["inference_time"]))
+                "max": float(np.max(feasibility["inference_time"])),
             }
-        
+
         if feasibility["energy_consumption"]:
             feasibility["energy_consumption_stats"] = {
                 "mean": float(np.mean(feasibility["energy_consumption"])),
                 "std": float(np.std(feasibility["energy_consumption"])),
                 "min": float(np.min(feasibility["energy_consumption"])),
-                "max": float(np.max(feasibility["energy_consumption"]))
+                "max": float(np.max(feasibility["energy_consumption"])),
             }
-        
+
         if feasibility["average_power"]:
             feasibility["average_power_stats"] = {
                 "mean": float(np.mean(feasibility["average_power"])),
                 "std": float(np.std(feasibility["average_power"])),
                 "min": float(np.min(feasibility["average_power"])),
-                "max": float(np.max(feasibility["average_power"]))
+                "max": float(np.max(feasibility["average_power"])),
             }
-        
-        # Save feasibility metrics
-        with open(output_file, 'w', encoding='utf-8') as f:
+
+        # Save feasibility metrics to separate file
+        with open(feasibility_output_file, "w", encoding="utf-8") as f:
             json.dump(feasibility, f, indent=4)
-        print(f"✅ Feasibility metrics saved to {output_file}")
-        
-        # Print summary statistics
+        print(f"[FEASIBILITY] ✅ Metrics saved to {feasibility_output_file}")
+
         if feasibility["inference_time"]:
-            print(f"\n📊 Feasibility Summary:")
-            print(f"Model loading time: {model_loading_time:.2f} seconds")
-            print(f"Model weight size: {model_disk_size_gb:.4f} GB")
-            print(f"GPU memory usage: {gpu_memory_usage_gb:.2f} GB")
-            print(f"Average inference time: {np.mean(feasibility['inference_time']):.2f} ± {np.std(feasibility['inference_time']):.2f} seconds")
-            print(f"Average energy consumption: {np.mean(feasibility['energy_consumption']):.2f} ± {np.std(feasibility['energy_consumption']):.2f} Joules")
-            print(f"Average power consumption: {np.mean(feasibility['average_power']):.2f} ± {np.std(feasibility['average_power']):.2f} Watts")
-    
+            print("\n[FEASIBILITY] 📊 Summary:")
+            print(f" - Model loading time: {model_loading_time:.2f} seconds")
+            print(f" - Model weight size: {model_disk_size_gb:.4f} GB")
+            print(f" - GPU memory usage: {gpu_memory_usage_gb:.2f} GB")
+            print(
+                " - Average inference time: "
+                f"{np.mean(feasibility['inference_time']):.2f} "
+                f"± {np.std(feasibility['inference_time']):.2f} seconds"
+            )
+            print(
+                " - Average energy consumption: "
+                f"{np.mean(feasibility['energy_consumption']):.2f} "
+                f"± {np.std(feasibility['energy_consumption']):.2f} Joules"
+            )
+            print(
+                " - Average power consumption: "
+                f"{np.mean(feasibility['average_power']):.2f} "
+                f"± {np.std(feasibility['average_power']):.2f} Watts"
+            )
+
     # Cleanup energy monitor resources
-    if 'energy_monitor' in locals():
+    if "energy_monitor" in locals():
         energy_monitor.cleanup()
 
 
+def _run_worker_refiner_pipeline(
+    worker_model_name: str,
+    refiner_model_name: str,
+    dataset: str,
+    temperature: float,
+    top_p: float,
+    max_tokens: int,
+    repetition_penalty: float,
+    max_model_len,
+    worker_fine_tuned: bool,
+    refiner_fine_tuned: bool,
+    analyze_feasibility: bool,
+    num_narratives: int,
+):
+    """Former `test_llm_refiner` pipeline (worker + refiner)."""
 
-def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:str, temperature: float, top_p: float, max_tokens: int, repetition_penalty: float, max_model_len, fine_tuned=False, analyze_feasibility=False):
+    print(
+        f"[CONFIG] Worker+Refiner pipeline: "
+        f"worker={worker_model_name} (fine_tuned={worker_fine_tuned}), "
+        f"refiner={refiner_model_name} (fine_tuned={refiner_fine_tuned}), "
+        f"dataset={dataset}, analyze_feasibility={analyze_feasibility}"
+    )
 
-    print(f"Params list: {worker_model_name}, {refiner_model_name}, {temperature}, {top_p}, {max_tokens}, {repetition_penalty}, {max_model_len}, {fine_tuned}, {analyze_feasibility}")
     set_full_reproducibility()
-    
+
     LOWER_BOUND = 1
-    UPPER_BOUND = 100
+    UPPER_BOUND = 200
     worker_name = worker_model_name
     refiner_name = refiner_model_name
     global prompt
     global prompt_ref
     base_prompt = prompt
     base_prompt_ref = prompt_ref
-    worker_model_name = MODEL_MAPPING[worker_model_name]
-    refiner_model_name = MODEL_MAPPING[refiner_model_name]
+    mapped_worker_model_name = MODEL_MAPPING[worker_model_name]
+    mapped_refiner_model_name = MODEL_MAPPING[refiner_model_name]
 
-    tokenizer_worker = AutoTokenizer.from_pretrained(worker_model_name)
-    tokenizer_refiner = AutoTokenizer.from_pretrained(refiner_model_name)
+    # Decide if we can share model between worker and refiner (check once before loop)
+    share_model = (
+        worker_name == refiner_name
+        and worker_fine_tuned == refiner_fine_tuned
+    )
+
+    # If sharing model, also share tokenizer
+    if share_model:
+        print("[SHARING] Using a single tokenizer instance for worker and refiner.")
+        tokenizer_worker = AutoTokenizer.from_pretrained(mapped_worker_model_name)
+        tokenizer_refiner = tokenizer_worker
+    else:
+        tokenizer_worker = AutoTokenizer.from_pretrained(mapped_worker_model_name)
+        tokenizer_refiner = AutoTokenizer.from_pretrained(mapped_refiner_model_name)
     sampling_params_worker = SamplingParams(
         temperature=temperature, 
         top_p=top_p, 
@@ -525,8 +701,25 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
         stop=tokenizer_refiner.eos_token
     )
 
-    lora_checkpoint_directory_path_worker = f"outputs_unsloth_{dataset}/{worker_name}/checkpoint-500"
-    lora_checkpoint_directory_path_refiner = f"outputs_unsloth_{dataset}_refiner/{refiner_name}/checkpoint-800"
+    # Resolve LoRA checkpoints via CHECKPOINT_MAPPING
+    worker_ckpt_step = get_checkpoint_step(dataset, "draft_generator", worker_name, default=500)
+    refiner_ckpt_step = get_checkpoint_step(dataset, "refiner", refiner_name, default=800)
+
+    lora_checkpoint_directory_path_worker = (
+        f"outputs_unsloth/outputs_unsloth_{dataset}_worker/{worker_name}/checkpoint-{worker_ckpt_step}"
+    )
+    lora_checkpoint_directory_path_refiner = (
+        f"outputs_unsloth/outputs_unsloth_{dataset}_refiner/{refiner_name}/checkpoint-{refiner_ckpt_step}"
+    )
+
+    print(
+        f"[CHECKPOINT] Worker draft_generator checkpoint: "
+        f"dataset={dataset}, model={worker_name}, step={worker_ckpt_step}"
+    )
+    print(
+        f"[CHECKPOINT] Refiner checkpoint: "
+        f"dataset={dataset}, model={refiner_name}, step={refiner_ckpt_step}"
+    )
 
     # Calculate combined model metrics only once
     if analyze_feasibility:
@@ -540,8 +733,8 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
         worker_model_load_start = time.time()
         
         worker_llm_temp = LLM(
-            model=worker_model_name, 
-            gpu_memory_utilization=0.8,  
+            model=mapped_worker_model_name, 
+            gpu_memory_utilization=0.6,  
             max_model_len=max_model_len, 
             max_num_seqs=1,
             enable_lora=True
@@ -562,21 +755,13 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
         print("🔄 Loading refiner model...")
         refiner_model_load_start = time.time()
         
-        if fine_tuned:
-            refiner_llm_temp = LLM(
-                model=refiner_model_name, 
-                gpu_memory_utilization=0.8,  
-                max_model_len=max_model_len, 
-                max_num_seqs=1,
-                enable_lora=True
-            )
-        else:
-            refiner_llm_temp = LLM(
-                model=refiner_model_name, 
-                gpu_memory_utilization=0.8,  
-                max_model_len=max_model_len, 
-                max_num_seqs=1
-            )
+        refiner_llm_temp = LLM(
+            model=mapped_refiner_model_name,
+            gpu_memory_utilization=0.6,  
+            max_model_len=max_model_len, 
+            max_num_seqs=1,
+            enable_lora=refiner_fine_tuned,
+        )
         
         refiner_model_load_end = time.time()
         refiner_model_disk_size_gb = log_capture_refiner.extract_model_size(handler_refiner)
@@ -620,20 +805,73 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
         data1 = json.load(file1)
 
     i = 0  # Counter for responses
+    NUM_FACTUALS = 40  # Number of factuals to process
+    NUM_COUNTERFACTUALS_PER_FACTUAL = 5  # Number of counterfactuals per factual
+    if NUM_FACTUALS * NUM_COUNTERFACTUALS_PER_FACTUAL != UPPER_BOUND:
+        raise ValueError(f"NUM_FACTUALS * NUM_COUNTERFACTUALS_PER_FACTUAL must be {UPPER_BOUND}")
+
+    # Define output file base directory (with refiner)
+    base_dir = os.path.join(
+        "results",
+        "with_refiner",
+        dataset,
+        f"{worker_name}--{refiner_name}",
+    )
+    os.makedirs(base_dir, exist_ok=True)
+
+    # Define output files
     if not analyze_feasibility:
-        output_file = f"data/results/Worker_{worker_model_name.split('/')[-1]}_Refiner_{refiner_model_name.split('/')[-1]}_Response_{dataset}_Finetuned_{fine_tuned}.json"
+        output_file = os.path.join(
+            base_dir,
+            f"{worker_name}--{refiner_name}_response_finetuned_{worker_fine_tuned}-{refiner_fine_tuned}.json",
+        )
+        feasibility_output_file = None
     else:
-        output_file = f"data/results/Feasibility_Worker_{worker_model_name.split('/')[-1]}_Refiner_{refiner_model_name.split('/')[-1]}_{dataset}_Finetuned_{fine_tuned}.json"
+        # When analyzing feasibility, save both test results and feasibility metrics
+        output_file = os.path.join(
+            base_dir,
+            f"{worker_name}--{refiner_name}_response_finetuned_{worker_fine_tuned}-{refiner_fine_tuned}.json",
+        )
+        feasibility_output_file = os.path.join(
+            base_dir,
+            f"{worker_name}--{refiner_name}_feasibility_response_finetuned_{worker_fine_tuned}-{refiner_fine_tuned}.json",
+        )
+
+    print(f"[IO] Test results output file: {output_file}")
+    if feasibility_output_file:
+        print(f"[IO] Feasibility metrics output file: {feasibility_output_file}")
+
+    # Initialize shared model ONCE before the loop if sharing is enabled
+    shared_llm = None
+    if share_model:
+        print("[SHARING] Initializing a single LLM instance for worker and refiner (will be reused for all examples).")
+        shared_llm = LLM(
+            model=mapped_worker_model_name,
+            gpu_memory_utilization=0.6,
+            max_model_len=max_model_len,
+            max_num_seqs=1,
+            enable_lora=worker_fine_tuned or refiner_fine_tuned,
+        )
+        print("[SHARING] Shared model loaded successfully.")
 
     for dataset_name, examples in data1.items():
 
-        if dataset == "adult":
-            dataset = "adult income"
+        dataset_key = dataset
+        if dataset_key == "adult":
+            dataset_key = "adult income"
 
-        if dataset_name.lower() == dataset:
+        if dataset_name.lower() == dataset_key:
+            print(f"[CONFIG] Processing {NUM_FACTUALS} factuals with {NUM_COUNTERFACTUALS_PER_FACTUAL} counterfactuals each (total: {NUM_FACTUALS * NUM_COUNTERFACTUALS_PER_FACTUAL} iterations)")
 
-            for index, values in examples.items():
-                for counterfactual in values["counterfactuals"]:
+            # Sort indices to ensure consistent ordering (indices are strings like "0", "1", etc.)
+            sorted_indices = sorted(examples.keys(), key=lambda x: int(x))[:NUM_FACTUALS]
+            
+            for index in sorted_indices:
+                values = examples[index]
+                # Process only the first NUM_COUNTERFACTUALS_PER_FACTUAL counterfactuals
+                counterfactuals_to_process = values["counterfactuals"][:NUM_COUNTERFACTUALS_PER_FACTUAL]
+                
+                for counterfactual in counterfactuals_to_process:
                     
                     if LOWER_BOUND <= i <= UPPER_BOUND:
                         
@@ -650,13 +888,18 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
                             tokenize=False,
                             add_generation_prompt=True
                         )
-                        worker_llm = LLM(
-                            model=worker_model_name, 
-                            gpu_memory_utilization=0.85, 
-                            max_model_len=max_model_len, 
-                            max_num_seqs=1,
-                            enable_lora=True
-                        )
+                        
+                        # Use shared model if available, otherwise create worker model for this example
+                        if share_model:
+                            worker_llm = shared_llm
+                        else:
+                            worker_llm = LLM(
+                                model=mapped_worker_model_name,
+                                gpu_memory_utilization=0.6,
+                                max_model_len=max_model_len,
+                                max_num_seqs=1,
+                                enable_lora=worker_fine_tuned,
+                            )
                         
                         # Initialize metrics tracking for this explanation
                         total_inference_time = 0.0
@@ -664,10 +907,9 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
                         total_average_power = 0.0
                         total_power_samples = []
                         
-                        # Generate explanations using the worker LLM
-                        N = 3
+                        # Generate explanations (draft narratives) using the worker LLM
                         explanations = []
-                        for draft_num in range(N):
+                        for draft_num in range(num_narratives):
                             try:
                                 # Initialize energy monitor for each draft
                                 energy_monitor = EnergyMonitor() if analyze_feasibility else None
@@ -678,7 +920,21 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
                                         energy_monitor.start_monitoring()
                                         draft_start = time.time()
                                     
-                                    outputs = worker_llm.generate([text], sampling_params=sampling_params_worker, lora_request=LoRARequest("counterfactual_explainability_adapter_worker", 1, lora_checkpoint_directory_path_worker))
+                                    if worker_fine_tuned:
+                                        outputs = worker_llm.generate(
+                                            [text],
+                                            sampling_params=sampling_params_worker,
+                                            lora_request=LoRARequest(
+                                                "counterfactual_explainability_adapter_worker",
+                                                1,
+                                                lora_checkpoint_directory_path_worker,
+                                            ),
+                                        )
+                                    else:
+                                        outputs = worker_llm.generate(
+                                            [text],
+                                            sampling_params=sampling_params_worker,
+                                        )
                                     explanations.append(outputs)
                                     
                                     if analyze_feasibility:
@@ -700,7 +956,7 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
                                         total_average_power += draft_average_power
                                         total_power_samples.append(power_samples)
 
-                                        print(f"Draft {draft_num + 1} - Time: {draft_inference_time:.2f}s, Energy: {draft_energy_consumed:.2f}J, Power: {draft_average_power:.2f}W")
+                                        print(f"Draft {draft_num + 1}/{num_narratives} - Time: {draft_inference_time:.2f}s, Energy: {draft_energy_consumed:.2f}J, Power: {draft_average_power:.2f}W")
                                         
                                         # Cleanup energy monitor
                                         energy_monitor.cleanup()
@@ -709,19 +965,26 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
                                 print(f"🚨 Assertion error: {assert_e}")
                                 continue
                         
-                        explanation1, explanation2, explanation3 = extract_explanations(explanations)
+                        # Build draft_narratives string for the refiner prompt
+                        draft_narratives_parts = []
+                        for idx, draft_outputs in enumerate(explanations):
+                            # Each draft_outputs is a vLLM result list (same shape as in worker-only pipeline)
+                            for out in draft_outputs:
+                                draft_text = out.outputs[0].text
+                            header = f"### Draft Explanation {idx + 1} ###"
+                            draft_narratives_parts.append(f"{header}\n{draft_text}")
+                        draft_narratives = "\n\n".join(draft_narratives_parts)
 
-                        # Delete the worker LLM to free memory
-                        del worker_llm
-                        torch.cuda.empty_cache()
+                        # Delete the worker LLM to free memory if not shared (only for non-shared case)
+                        if not share_model:
+                            del worker_llm
+                            torch.cuda.empty_cache()
 
                         current_prompt_refiner = base_prompt_ref.format(
-                            dataset_description=dataset_kb[dataset_name], 
-                            factual_example=str(values["factual"]), 
+                            dataset_description=dataset_kb[dataset_name],
+                            factual_example=str(values["factual"]),
                             counterfactual_example=str(counterfactual),
-                            draft_explanation_1=explanation1,
-                            draft_explanation_2=explanation2,
-                            draft_explanation_3=explanation3
+                            draft_narratives=draft_narratives,
                         )
 
                         messages = [{"role": "user", "content": current_prompt_refiner}]
@@ -731,21 +994,17 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
                             tokenize=False,
                             add_generation_prompt=True
                         )
-
-                        if fine_tuned:
-                            refiner_llm = LLM(
-                                model=refiner_model_name, 
-                                gpu_memory_utilization=0.8, 
-                                max_model_len=max_model_len, 
-                                max_num_seqs=1,
-                                enable_lora=True
-                            )
+                        
+                        # Use shared model if available, otherwise create refiner model for this example
+                        if share_model:
+                            refiner_llm = shared_llm
                         else:
                             refiner_llm = LLM(
-                                model=refiner_model_name, 
-                                gpu_memory_utilization=0.8, 
-                                max_model_len=max_model_len, 
-                                max_num_seqs=1
+                                model=mapped_refiner_model_name,
+                                gpu_memory_utilization=0.6,
+                                max_model_len=max_model_len,
+                                max_num_seqs=1,
+                                enable_lora=refiner_fine_tuned,
                             )
 
                         try:
@@ -758,10 +1017,21 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
                                     energy_monitor.start_monitoring()
                                     refiner_start = time.time()
                                 
-                                if fine_tuned:
-                                    outputs = refiner_llm.generate([text], sampling_params=sampling_params_refiner, lora_request=LoRARequest("counterfactual_explainability_adapter_refiner", 2, lora_checkpoint_directory_path_refiner))
+                                if refiner_fine_tuned:
+                                    outputs = refiner_llm.generate(
+                                        [text],
+                                        sampling_params=sampling_params_refiner,
+                                        lora_request=LoRARequest(
+                                            "counterfactual_explainability_adapter_refiner",
+                                            2,
+                                            lora_checkpoint_directory_path_refiner,
+                                        ),
+                                    )
                                 else:
-                                    outputs = refiner_llm.generate([text], sampling_params=sampling_params_refiner)
+                                    outputs = refiner_llm.generate(
+                                        [text],
+                                        sampling_params=sampling_params_refiner,
+                                    )
                                 
                                 if analyze_feasibility:
                                     refiner_end = time.time()
@@ -790,9 +1060,10 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
                             print(f"🚨 Assertion error: {assert_e}")
                             continue
 
-                        # Delete the refiner LLM to free memory
-                        del refiner_llm
-                        torch.cuda.empty_cache()
+                        # Delete the refiner LLM to free memory if not shared (only for non-shared case)
+                        if not share_model:
+                            del refiner_llm
+                            torch.cuda.empty_cache()
 
                         # Process the outputs if generated successfully
                         for output in outputs:
@@ -827,8 +1098,8 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
                         else:
                             print(f"#################### explanation #{i} completed - Time taken: {total_inference_time:.2f}s ###########################")
 
-                        # Save every 10 responses
-                        if i % 10 == 0 and not analyze_feasibility:
+                        # Save every 10 responses (always save test results)
+                        if i % 10 == 0:
                             save_responses(responses, output_file)
                             responses = {}  # Clear the temporary dictionary to prevent duplication
 
@@ -836,10 +1107,19 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
                         del generated_text
                         del outputs
                     i += 1
+    
+    # Cleanup shared model after all examples are processed
+    if share_model and shared_llm is not None:
+        print("[SHARING] Cleaning up shared model after processing all examples.")
+        del shared_llm
+        torch.cuda.empty_cache()
+    
     # Final save after loop completion
-    if not analyze_feasibility:
-        save_responses(responses, output_file)
-    else:
+    # Always save test results
+    save_responses(responses, output_file)
+    
+    # If analyzing feasibility, also save feasibility metrics to separate file
+    if analyze_feasibility:
         # Calculate statistics before saving
         if feasibility["inference_time"]:
             feasibility["inference_time_stats"] = {
@@ -865,10 +1145,10 @@ def test_llm_refiner(worker_model_name: str, refiner_model_name: str, dataset:st
                 "max": float(np.max(feasibility["average_power"]))
             }
         
-        # Save feasibility metrics
-        with open(output_file, 'w', encoding='utf-8') as f:
+        # Save feasibility metrics to separate file
+        with open(feasibility_output_file, 'w', encoding='utf-8') as f:
             json.dump(feasibility, f, indent=4)
-        print(f"✅ Feasibility metrics saved to {output_file}")
+        print(f"[FEASIBILITY] ✅ Feasibility metrics saved to {feasibility_output_file}")
         
         # Print summary statistics
         if feasibility["inference_time"]:
