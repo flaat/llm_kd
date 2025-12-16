@@ -34,7 +34,7 @@ def evaluate_single(
         refiner_finetuned=refiner_finetuned,
     )
     data = load_json(input_path)
-    metrics = compute_metrics_for_dataset(data, max_examples=max_examples)
+    metrics = compute_metrics_for_dataset(data, max_examples=max_examples, dataset_name=dataset_name)
     row = generate_result_row(
         dataset_name=dataset_name,
         worker_model=worker_model,

@@ -2,9 +2,37 @@ import json
 import ast
 import re
 import statistics
+import pickle
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
+
+import numpy as np
+import pandas as pd
+
+try:
+    import shap
+    SHAP_AVAILABLE = True
+except ImportError:
+    SHAP_AVAILABLE = False
+
+try:
+    from lime.lime_tabular import LimeTabularExplainer
+    LIME_AVAILABLE = True
+except ImportError:
+    LIME_AVAILABLE = False
+
+try:
+    from scipy.stats import kendalltau
+    SCIPY_AVAILABLE = True
+except ImportError:
+    SCIPY_AVAILABLE = False
+
+try:
+    from src.clf import Dataset as DatasetClass
+    DATASET_CLASS_AVAILABLE = True
+except ImportError:
+    DATASET_CLASS_AVAILABLE = False
 
 
 # ------------------------- Parsing helpers -------------------------
@@ -295,7 +323,7 @@ def compute_entry_metrics(entry: Dict, parsed: Optional[Dict]) -> Tuple[bool, Op
     return True, is_perfect, avg_ff, target_correct
 
 
-def compute_metrics_for_dataset(data: Dict, max_examples: int = 200) -> Dict[str, Any]:
+def compute_metrics_for_dataset(data: Dict, max_examples: int = 200, dataset_name: Optional[str] = None) -> Dict[str, Any]:
     """Aggregate metrics across a dataset JSON object."""
     parsed_success = 0
     parsed_total = 0
@@ -303,6 +331,13 @@ def compute_metrics_for_dataset(data: Dict, max_examples: int = 200) -> Dict[str
     avg_ff_values: List[float] = []
     target_correct_total = 0
     comparable_total = 0
+    
+    # FRA metrics collection
+    fra_shap_0_05_values: List[float] = []
+    fra_shap_0_1_values: List[float] = []
+    fra_lime_0_05_values: List[float] = []
+    fra_lime_0_1_values: List[float] = []
+    fra_total_samples = 0
 
     for idx, key in enumerate(sorted(data.keys(), key=lambda x: int(x))):
         if idx >= max_examples:
@@ -322,23 +357,52 @@ def compute_metrics_for_dataset(data: Dict, max_examples: int = 200) -> Dict[str
             avg_ff_values.append(avg_ff)
         if target_correct is True:
             target_correct_total += 1
+        
+        # Compute FRA metrics if conditions are met
+        if dataset_name and perfect_match is True and parsed is not None:
+            fra_metrics = compute_fra_metrics(entry, parsed, dataset_name)
+            
+            # Check if any FRA metric was computed (indicating valid analysis)
+            if any(v is not None for v in fra_metrics.values()):
+                fra_total_samples += 1
+                
+                if fra_metrics.get("fra_shap_0.05") is not None:
+                    fra_shap_0_05_values.append(fra_metrics["fra_shap_0.05"])
+                if fra_metrics.get("fra_shap_0.1") is not None:
+                    fra_shap_0_1_values.append(fra_metrics["fra_shap_0.1"])
+                if fra_metrics.get("fra_lime_0.05") is not None:
+                    fra_lime_0_05_values.append(fra_metrics["fra_lime_0.05"])
+                if fra_metrics.get("fra_lime_0.1") is not None:
+                    fra_lime_0_1_values.append(fra_metrics["fra_lime_0.1"])
 
     parsing_rate = parsed_success / parsed_total if parsed_total else 0.0
     perfect_ff_rate = perfect_ff / parsed_total if parsed_total else 0.0
     avg_ff_rate = statistics.mean(avg_ff_values) if avg_ff_values else 0.0
     avg_ff_std = statistics.stdev(avg_ff_values) if len(avg_ff_values) > 1 else 0.0
     target_f_rate = target_correct_total / parsed_total if parsed_total else 0.0
+    
+    # Compute FRA averages
+    fra_shap_0_05_avg = statistics.mean(fra_shap_0_05_values) if fra_shap_0_05_values else None
+    fra_shap_0_1_avg = statistics.mean(fra_shap_0_1_values) if fra_shap_0_1_values else None
+    fra_lime_0_05_avg = statistics.mean(fra_lime_0_05_values) if fra_lime_0_05_values else None
+    fra_lime_0_1_avg = statistics.mean(fra_lime_0_1_values) if fra_lime_0_1_values else None
 
-    return {
+    result = {
         "parsing_rate": round(parsing_rate, 4),
         "perfect_ff": round(perfect_ff_rate, 4),
         "avg_ff": round(avg_ff_rate, 4),
         "avg_ff_std": round(avg_ff_std, 4),
         "target_f": round(target_f_rate, 4),
-        "fra": None,  # placeholder until defined
+        "fra_shap_0.05": round(fra_shap_0_05_avg, 4) if fra_shap_0_05_avg is not None else None,
+        "fra_shap_0.1": round(fra_shap_0_1_avg, 4) if fra_shap_0_1_avg is not None else None,
+        "fra_lime_0.05": round(fra_lime_0_05_avg, 4) if fra_lime_0_05_avg is not None else None,
+        "fra_lime_0.1": round(fra_lime_0_1_avg, 4) if fra_lime_0_1_avg is not None else None,
+        "fra_total_samples": fra_total_samples,
         "parsed_total": parsed_total,
         "comparable_total": comparable_total,
     }
+    
+    return result
 
 
 # ------------------------- Output helpers -------------------------
@@ -447,9 +511,9 @@ def extract_checkpoint_name(path: Path) -> str:
     return stem
 
 
-def compute_checkpoint_metrics(file_path: Path, max_examples: int = 200) -> Dict[str, float]:
+def compute_checkpoint_metrics(file_path: Path, max_examples: int = 200, dataset_name: Optional[str] = None) -> Dict[str, float]:
     data = load_json(file_path)
-    metrics = compute_metrics_for_dataset(data, max_examples=max_examples)
+    metrics = compute_metrics_for_dataset(data, max_examples=max_examples, dataset_name=dataset_name)
     return {
         "parsing_rate": metrics["parsing_rate"],
         "perfect_ff_rate": metrics["perfect_ff"],
@@ -467,7 +531,7 @@ def collect_validation_metrics(base_dir: Path, datasets: List[str], models: List
             if not model_dir.exists():
                 continue
             for json_file in sorted(model_dir.glob("*.json")):
-                metrics = compute_checkpoint_metrics(json_file, max_examples=max_examples)
+                metrics = compute_checkpoint_metrics(json_file, max_examples=max_examples, dataset_name=dataset)
                 checkpoint = extract_checkpoint_name(json_file)
                 rows.append({
                     "dataset": dataset,
@@ -516,6 +580,592 @@ def plot_metrics(rows: List[Dict], out_path: Path):
     fig.tight_layout()
     fig.savefig(out_path)
     plt.close(fig)
+
+
+# ------------------------- FRA metric helpers -------------------------
+
+def _normalize_dataset_name(dataset_name: str) -> str:
+    """Normalize dataset name to match pickle file naming convention."""
+    # Map common variations to file names
+    name_mapping = {
+        "Adult Income": "adult",
+        "adult income": "adult",
+        "adult": "adult",
+        "Titanic": "titanic",
+        "titanic": "titanic",
+        "Diabetes": "diabetes",
+        "diabetes": "diabetes",
+        "California Housing": "california",
+        "california housing": "california",
+        "california": "california",
+    }
+    return name_mapping.get(dataset_name, dataset_name.lower().replace(" ", "_"))
+
+
+def _load_classifier_model(dataset_name: str) -> Tuple[Any, Any]:
+    """
+    Load the pickle model and Dataset class for encoding.
+    Returns (model, dataset_instance) or (None, None) if loading fails.
+    """
+    if not DATASET_CLASS_AVAILABLE:
+        return None, None
+    
+    try:
+        # Normalize dataset name
+        normalized_name = _normalize_dataset_name(dataset_name)
+        model_path = Path("src/explainer/clf_models") / f"{normalized_name}.pkl"
+        
+        if not model_path.exists():
+            return None, None
+        
+        # Load model
+        with open(model_path, 'rb') as f:
+            model = pickle.load(f)
+        
+        # Load Dataset class to get encoders and feature order
+        # Map normalized name back to Dataset class expected name
+        dataset_class_name_mapping = {
+            "adult": "Adult Income",
+            "titanic": "Titanic",
+            "diabetes": "Diabetes",
+            "california": "California Housing",
+        }
+        dataset_class_name = dataset_class_name_mapping.get(normalized_name, dataset_name)
+        
+        dataset_instance = DatasetClass(name=dataset_class_name)
+        
+        return model, dataset_instance
+    except Exception:
+        return None, None
+
+
+def _convert_instance_to_model_input(instance: Dict, dataset: Any) -> Optional[np.ndarray]:
+    """
+    Convert factual/counterfactual dict to model input format.
+    Returns numpy array in correct feature order, or None if conversion fails.
+    """
+    if dataset is None:
+        return None
+    
+    try:
+        # Get feature names in correct order (excluding target)
+        feature_names = list(dataset.X_train.columns)
+        
+        # Build array in correct order
+        feature_values = []
+        for feat_name in feature_names:
+            # Try exact match first
+            if feat_name in instance:
+                value = instance[feat_name]
+            else:
+                # Try case-insensitive match
+                value = None
+                for key in instance.keys():
+                    if key.lower() == feat_name.lower():
+                        value = instance[key]
+                        break
+                
+                if value is None:
+                    return None
+            
+            # Apply label encoder if needed
+            if feat_name in dataset.label_encoders:
+                le = dataset.label_encoders[feat_name]
+                # Convert value to encoded form
+                if isinstance(value, str):
+                    value = le.transform([value])[0]
+                else:
+                    # Try to find the encoded value
+                    try:
+                        value = le.transform([str(value)])[0]
+                    except:
+                        # If transform fails, try inverse then transform
+                        try:
+                            decoded = le.inverse_transform([int(value)])[0] if isinstance(value, (int, float)) else value
+                            value = le.transform([str(decoded)])[0]
+                        except:
+                            return None
+            
+            feature_values.append(value)
+        
+        return np.array(feature_values, dtype=float)
+    except Exception:
+        return None
+
+
+def _compute_shap_importance(
+    model, 
+    factual_array: np.ndarray, 
+    counterfactual_array: np.ndarray, 
+    feature_names: List[str], 
+    changed_features: List[str]
+) -> Optional[Dict[str, float]]:
+    """
+    Compute SHAP-based importance by calculating |SHAP(x) - SHAP(x')|.
+    Returns dict mapping changed feature names to importance magnitudes.
+    """
+    if not SHAP_AVAILABLE or model is None:
+        return None
+    
+    try:
+        # Convert numpy arrays to pandas DataFrames with feature names
+        # This avoids the sklearn warning about missing feature names
+        factual_df = pd.DataFrame(factual_array.reshape(1, -1), columns=feature_names)
+        counterfactual_df = pd.DataFrame(counterfactual_array.reshape(1, -1), columns=feature_names)
+        
+        # Create SHAP explainer (TreeExplainer for DecisionTree)
+        explainer = shap.TreeExplainer(model)
+        
+        # Compute SHAP values for both instances using DataFrames
+        shap_factual = explainer.shap_values(factual_df)
+        shap_counterfactual = explainer.shap_values(counterfactual_df)
+        
+        # Handle multi-class output (take first class if list)
+        if isinstance(shap_factual, list):
+            shap_factual = shap_factual[0]
+        if isinstance(shap_counterfactual, list):
+            shap_counterfactual = shap_counterfactual[0]
+        
+        # Ensure we have 1D arrays for comparison
+        # Flatten to 1D if needed
+        if shap_factual.ndim > 1:
+            shap_factual = shap_factual.flatten()
+        if shap_counterfactual.ndim > 1:
+            shap_counterfactual = shap_counterfactual.flatten()
+        
+        # Ensure same length
+        min_len = min(len(shap_factual), len(shap_counterfactual))
+        shap_factual = shap_factual[:min_len]
+        shap_counterfactual = shap_counterfactual[:min_len]
+        
+        # Calculate absolute difference (result is 1D array)
+        shap_diff = np.abs(shap_factual - shap_counterfactual)
+        
+        # Map to feature names and filter to changed features only
+        importance_dict = {}
+        changed_feature_lower = [cf.lower() for cf in changed_features]
+        
+        for idx, feat_name in enumerate(feature_names):
+            if idx >= len(shap_diff):
+                break
+            if feat_name.lower() in changed_feature_lower:
+                # Find matching changed feature (case-insensitive)
+                matching_feat = None
+                for cf in changed_features:
+                    if cf.lower() == feat_name.lower():
+                        matching_feat = cf
+                        break
+                if matching_feat:
+                    # Extract scalar value from numpy array
+                    value = shap_diff[idx]
+                    if isinstance(value, np.ndarray):
+                        value = value.item() if value.size == 1 else float(value[0])
+                    else:
+                        value = float(value)
+                    importance_dict[matching_feat] = value
+        
+        return importance_dict if importance_dict else None
+    except Exception as e:
+        # Print error for debugging
+        import traceback
+        print(f"SHAP computation error: {e}")
+        traceback.print_exc()
+        return None
+
+
+def _compute_lime_importance(
+    model,
+    factual_array: np.ndarray,
+    counterfactual_array: np.ndarray,
+    feature_names: List[str],
+    changed_features: List[str],
+    training_data: np.ndarray
+) -> Optional[Dict[str, float]]:
+    """
+    Compute LIME-based importance using magnitude of weights.
+    Returns dict mapping changed feature names to importance magnitudes.
+    """
+    if not LIME_AVAILABLE or model is None:
+        return None
+    
+    try:
+        import warnings
+        
+        # Create a wrapper function for predict_proba that converts numpy arrays to DataFrames
+        # This prevents sklearn warnings about missing feature names
+        def predict_proba_wrapper(X):
+            """Wrapper that converts numpy arrays to DataFrames before prediction."""
+            try:
+                if isinstance(X, np.ndarray):
+                    # Convert to DataFrame with feature names
+                    if X.ndim == 1:
+                        X = X.reshape(1, -1)
+                    X_df = pd.DataFrame(X, columns=feature_names)
+                    # Suppress the specific warning about feature names
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings('ignore', category=UserWarning, module='sklearn')
+                        return model.predict_proba(X_df)
+                elif isinstance(X, list):
+                    # Convert list to DataFrame
+                    X_arr = np.array(X)
+                    if X_arr.ndim == 1:
+                        X_arr = X_arr.reshape(1, -1)
+                    X_df = pd.DataFrame(X_arr, columns=feature_names)
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings('ignore', category=UserWarning, module='sklearn')
+                        return model.predict_proba(X_df)
+                else:
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings('ignore', category=UserWarning, module='sklearn')
+                        return model.predict_proba(X)
+            except Exception as e:
+                # Fallback: try without DataFrame conversion if conversion fails
+                try:
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings('ignore', category=UserWarning, module='sklearn')
+                        return model.predict_proba(X)
+                except Exception:
+                    # Last resort: return without warning suppression
+                    return model.predict_proba(X)
+        
+        # Create LIME explainer
+        explainer = LimeTabularExplainer(
+            training_data,
+            feature_names=feature_names,
+            mode='classification',
+            discretize_continuous=False
+        )
+        
+        # LIME expects a numpy array (1D), not a list
+        # Ensure factual_array is a 1D numpy array
+        if isinstance(factual_array, np.ndarray):
+            factual_for_lime = factual_array.flatten() if factual_array.ndim > 1 else factual_array
+        else:
+            factual_for_lime = np.array(factual_array).flatten()
+        
+        # Get explanation for factual instance using wrapped predict_proba
+        explanation = explainer.explain_instance(
+            factual_for_lime,
+            predict_proba_wrapper,
+            num_features=len(feature_names)
+        )
+        
+        # Extract feature importance (absolute values)
+        importance_dict = {}
+        changed_feature_lower = [cf.lower() for cf in changed_features]
+        
+        # explanation.as_list() returns list of (feature_name, importance) tuples
+        for feat_name_str, importance in explanation.as_list():
+            # feat_name_str is typically the feature name as string
+            # Try to match it to our feature names (case-insensitive)
+            matching_feat = None
+            for cf in changed_features:
+                # Check if the LIME feature name matches our changed feature
+                if (cf.lower() in feat_name_str.lower() or 
+                    feat_name_str.lower() in cf.lower() or
+                    cf.lower() == feat_name_str.lower()):
+                    matching_feat = cf
+                    break
+            
+            # If no direct match, try matching by index in feature_names
+            if matching_feat is None:
+                try:
+                    # Sometimes LIME returns feature names with indices like "feature_0"
+                    # Try to extract index
+                    import re
+                    idx_match = re.search(r'(\d+)', feat_name_str)
+                    if idx_match:
+                        feat_idx = int(idx_match.group(1))
+                        if feat_idx < len(feature_names):
+                            feat_name = feature_names[feat_idx]
+                            for cf in changed_features:
+                                if cf.lower() == feat_name.lower():
+                                    matching_feat = cf
+                                    break
+                except:
+                    pass
+            
+            if matching_feat:
+                importance_dict[matching_feat] = abs(importance)
+        
+        return importance_dict if importance_dict else None
+    except Exception as e:
+        # Print error for debugging
+        import traceback
+        print(f"LIME computation error: {e}")
+        traceback.print_exc()
+        return None
+
+
+def _compute_tie_factor(magnitudes: List[float], num_changes: int, alpha: float) -> float:
+    """
+    Compute tie factor based on number of changes.
+    If num_changes <= 3: alpha * (max - min)
+    If num_changes >= 4: alpha * IQR
+    """
+    if not magnitudes or len(magnitudes) == 0:
+        return 0.0
+    
+    if num_changes <= 3:
+        return alpha * (max(magnitudes) - min(magnitudes))
+    else:
+        # Compute IQR using numpy percentile
+        magnitudes_array = np.asarray(magnitudes)
+        if len(magnitudes_array) < 2:
+            return 0.0
+        q1, q3 = np.percentile(magnitudes_array, [25, 75])
+        iqr_value = q3 - q1
+        return alpha * iqr_value
+
+
+def _create_ground_truth_ranking(importance_dict: Dict[str, float], tie_factor: float) -> Dict[str, int]:
+    """
+    Create ranking with ties based on importance magnitudes.
+    Features within tie_factor are assigned the same rank (lower number).
+    Returns dict mapping feature names to ranks (1-indexed).
+    
+    Format matches LLM output: {"feature_x": 1, "feature_y": 2, ...}
+    where lower rank number = higher importance.
+    """
+    if not importance_dict:
+        return {}
+    
+    # Sort features by importance magnitude (descending)
+    sorted_features = sorted(importance_dict.items(), key=lambda x: x[1], reverse=True)
+    
+    ranking = {}
+    current_rank = 1
+    
+    for i, (feat_name, magnitude) in enumerate(sorted_features):
+        if i == 0:
+            # First feature always gets rank 1
+            ranking[feat_name] = current_rank
+        else:
+            # Check if this feature is within tie_factor of any previous feature in the same tied group
+            # We check against the most recent feature's magnitude
+            prev_magnitude = sorted_features[i - 1][1]
+            if abs(magnitude - prev_magnitude) <= tie_factor:
+                # Same rank as previous (tied)
+                ranking[feat_name] = current_rank
+            else:
+                # New rank: count how many features we've seen so far (this is the position)
+                # Rank should be the position of the first feature in this new group
+                current_rank = i + 1
+                ranking[feat_name] = current_rank
+    
+    return ranking
+
+
+def _compute_kendall_tau_with_ties(ranking1: Dict[str, int], ranking2: Dict[str, int]) -> Optional[float]:
+    """
+    Compute Kendall tau between two rankings, accounting for ties.
+    Returns normalized value: (tau + 1) / 2, or None if computation fails.
+    """
+    if not ranking1 or not ranking2:
+        return None
+    
+    # Get common features
+    common_features = set(ranking1.keys()) & set(ranking2.keys())
+    if len(common_features) < 2:
+        return None
+    
+    # Build lists of ranks for common features
+    ranks1 = []
+    ranks2 = []
+    for feat in sorted(common_features):
+        ranks1.append(ranking1[feat])
+        ranks2.append(ranking2[feat])
+    
+    if SCIPY_AVAILABLE:
+        try:
+            tau, _ = kendalltau(ranks1, ranks2)
+            if np.isnan(tau):
+                return None
+            # Normalize to [0, 1]
+            return (tau + 1) / 2
+        except Exception:
+            return None
+    else:
+        # Manual implementation (simplified, doesn't handle all tie cases perfectly)
+        try:
+            n = len(ranks1)
+            concordant = 0
+            discordant = 0
+            
+            for i in range(n):
+                for j in range(i + 1, n):
+                    sign1 = np.sign(ranks1[i] - ranks1[j])
+                    sign2 = np.sign(ranks2[i] - ranks2[j])
+                    if sign1 * sign2 > 0:
+                        concordant += 1
+                    elif sign1 * sign2 < 0:
+                        discordant += 1
+            
+            total = concordant + discordant
+            if total == 0:
+                return None
+            
+            tau = (concordant - discordant) / total
+            return (tau + 1) / 2
+        except Exception:
+            return None
+
+
+def compute_fra_metrics(entry: Dict, parsed: Dict, dataset_name: str) -> Dict[str, Optional[float]]:
+    """
+    Compute FRA metrics for an entry.
+    Only computes if entry has perfectFF and num_changes > 1.
+    Returns dict with 4 FRA values: fra_shap_0.05, fra_shap_0.1, fra_lime_0.05, fra_lime_0.1
+    """
+    result = {
+        "fra_shap_0.05": None,
+        "fra_shap_0.1": None,
+        "fra_lime_0.05": None,
+        "fra_lime_0.1": None,
+    }
+    
+    # Check if we have features_importance_ranking in parsed response
+    if not parsed or "features_importance_ranking" not in parsed:
+        return result
+    
+    # Get feature changes from entry
+    # feature_changes can be either a dict or a list of dicts
+    changes = entry.get("changes", {})
+    if not isinstance(changes, dict):
+        return result
+    
+    feature_changes_raw = changes.get("feature_changes", {})
+    
+    # Normalize feature_changes to a dict
+    feature_changes = _normalize_feature_changes(feature_changes_raw)
+    
+    if not feature_changes:
+        return result
+    
+    # Filter out target variables
+    feature_changes_filtered = {}
+    for var_name, var_data in feature_changes.items():
+        if not _is_target_variable(var_name):
+            feature_changes_filtered[var_name] = var_data
+    
+    # Check if num_changes > 1
+    if len(feature_changes_filtered) <= 1:
+        return result
+    
+    # Extract factual and counterfactual instances
+    # First try to get from ground_truth structure (preferred)
+    factual, counterfactual = None, None
+    
+    ground_truth = entry.get("ground_truth", {})
+    if isinstance(ground_truth, dict):
+        factual = ground_truth.get("factual")
+        counterfactual = ground_truth.get("counterfactual")
+    
+    # Fall back to extracting from prompt if ground_truth not available
+    if not factual or not counterfactual:
+        prompt_text = entry.get("prompt") or entry.get("generated_text", "")
+        try:
+            pattern = r"###\s*Factual Example\s*###\s*(\{.*?\})\s*###\s*Counterfactual Example\s*###\s*(\{.*?\})"
+            m = re.search(pattern, prompt_text, re.DOTALL)
+            if m:
+                factual_str, counterfactual_str = m.group(1), m.group(2)
+                factual = ast.literal_eval(factual_str)
+                counterfactual = ast.literal_eval(counterfactual_str)
+            else:
+                dicts = re.findall(r"(\{.*?\})", prompt_text, re.DOTALL)
+                if len(dicts) >= 2:
+                    factual_str, counterfactual_str = dicts[-2], dicts[-1]
+                    factual = ast.literal_eval(factual_str)
+                    counterfactual = ast.literal_eval(counterfactual_str)
+        except Exception:
+            pass
+    
+    if not factual or not counterfactual:
+        return result
+    
+    # Load model and dataset
+    model, dataset = _load_classifier_model(dataset_name)
+    if model is None or dataset is None:
+        return result
+    
+    # Convert instances to model input format
+    factual_array = _convert_instance_to_model_input(factual, dataset)
+    counterfactual_array = _convert_instance_to_model_input(counterfactual, dataset)
+    
+    if factual_array is None or counterfactual_array is None:
+        return result
+    
+    # Get feature names and changed features
+    feature_names = list(dataset.X_train.columns)
+    changed_features = list(feature_changes_filtered.keys())
+    
+    # Get predicted ranking from LLM output
+    # Format: {"feature_x": 1, "feature_y": 2, ...} where lower rank = higher importance
+    predicted_ranking_raw = parsed.get("features_importance_ranking", {})
+    if not isinstance(predicted_ranking_raw, dict):
+        return result
+    
+    # Normalize predicted ranking (convert to int, handle case-insensitive)
+    # The LLM produces ranks where 1 = most important, 2 = second most important, etc.
+    predicted_ranking = {}
+    for feat_name, rank_value in predicted_ranking_raw.items():
+        try:
+            rank = int(rank_value) if isinstance(rank_value, (int, str)) else None
+            if rank is not None:
+                # Find matching feature in changed_features (case-insensitive)
+                matching_feat = None
+                for cf in changed_features:
+                    if cf.lower() == feat_name.lower():
+                        matching_feat = cf
+                        break
+                if matching_feat:
+                    predicted_ranking[matching_feat] = rank
+        except (ValueError, TypeError):
+            continue
+    
+    if not predicted_ranking:
+        return result
+    
+    # Get training data for LIME
+    training_data = dataset.X_train.values
+    
+    # Compute for each explainer and alpha combination
+    for explainer_name, explainer_func in [("shap", _compute_shap_importance), ("lime", _compute_lime_importance)]:
+        for alpha in [0.05, 0.1]:
+            try:
+                # Compute importance
+                if explainer_name == "shap":
+                    importance_dict = explainer_func(
+                        model, factual_array, counterfactual_array, feature_names, changed_features
+                    )
+                else:  # lime
+                    importance_dict = explainer_func(
+                        model, factual_array, counterfactual_array, feature_names, changed_features, training_data
+                    )
+                
+                if not importance_dict:
+                    continue
+                
+                # Compute tie factor
+                magnitudes = list(importance_dict.values())
+                tie_factor = _compute_tie_factor(magnitudes, len(changed_features), alpha)
+                
+                # Create ground-truth ranking
+                ground_truth_ranking = _create_ground_truth_ranking(importance_dict, tie_factor)
+                
+                if not ground_truth_ranking:
+                    continue
+                
+                # Compute Kendall tau
+                tau_normalized = _compute_kendall_tau_with_ties(ground_truth_ranking, predicted_ranking)
+                
+                if tau_normalized is not None:
+                    key = f"fra_{explainer_name}_{alpha}"
+                    result[key] = tau_normalized
+            except Exception:
+                continue
+    
+    return result
 
 
 # ------------------------- Global results helpers -------------------------
