@@ -78,7 +78,6 @@ CHECKPOINT_MAPPING = {
             "unsloth_qwen3_1.7B": 500,
             "unsloth_llama_3B-Instruct": 500,
             "unsloth_qwen_3B": 500,
-            "unsloth_qwen3_4B-Instruct": 500,
         },
         "refiner": {
             "unsloth_qwen_0.5B": 800,
@@ -94,7 +93,13 @@ CHECKPOINT_MAPPING = {
     },
     "titanic": {
         "draft_generator": {
-            "unsloth_qwen_0.5B": 500,
+            "unsloth_qwen_0.5B": 650,
+            "unsloth_qwen3_0.6B": 750,
+            "unsloth_llama_1B-Instruct": 300,
+            "unsloth_deepseek_r1_qwen_1.5B": 600,
+            "unsloth_qwen3_1.7B": 550,
+            "unsloth_llama_3B-Instruct": 500,
+            "unsloth_qwen_3B": 600,
         },
         "refiner": {
             "unsloth_qwen_0.5B": 800,
