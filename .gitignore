@@ -5,10 +5,10 @@ figures
 .DS_Store
 outputs
 pippo.py
-pippo2.py
-pippo3.py
 unsloth_compiled_cache
 outputs_unsloth
 
 old/ 
 .env
+
+global_results/
