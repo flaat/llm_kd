@@ -21,6 +21,9 @@ import json
 import os
 from pathlib import Path
 from typing import Dict, List, Tuple, Any, Optional
+import time
+import subprocess
+import threading
 
 from unsloth import FastLanguageModel, is_bfloat16_supported, get_chat_template
 from unsloth.chat_templates import train_on_responses_only
@@ -223,6 +226,100 @@ def print_memory_stats(start_gpu_memory: float, trainer_stats: Optional[Any] = N
         print(f"Peak reserved memory for training % of max memory = {lora_percentage} %.")
 
 
+class EnergyMonitor:
+    """Monitor energy consumption during fine-tuning using nvidia-smi."""
+    
+    def __init__(self):
+        self.monitoring = False
+        self.power_samples = []  # Store (timestamp, power) tuples
+    
+    def get_gpu_power_draw(self):
+        """Get current GPU power draw in watts using nvidia-smi."""
+        try:
+            result = subprocess.run(
+                ['nvidia-smi', '--query-gpu=power.draw', '--format=csv,noheader,nounits'],
+                capture_output=True, text=True, timeout=2.0
+            )
+            if result.returncode == 0:
+                power_draws = []
+                for line in result.stdout.strip().split('\n'):
+                    if line.strip():
+                        try:
+                            power_draws.append(float(line.strip()))
+                        except ValueError:
+                            continue
+                return sum(power_draws) if power_draws else 0.0
+        except (subprocess.TimeoutExpired, FileNotFoundError, ValueError) as e:
+            print(f"⚠️ nvidia-smi failed: {e}")
+        return 0.0
+    
+    def start_monitoring(self):
+        """Start energy monitoring with precise timestamps."""
+        self.monitoring = True
+        self.power_samples = []
+        
+        def monitor():
+            while self.monitoring:
+                try:
+                    timestamp = time.time()
+                    power = self.get_gpu_power_draw()
+                    # Store all power readings, including zeros
+                    self.power_samples.append((timestamp, power))
+                    # Sleep for 200ms (nvidia-smi is slower than NVML)
+                    time.sleep(0.2)
+                except Exception as e:
+                    print(f"⚠️ Monitoring error: {e}")
+                    break
+        
+        self.monitor_thread = threading.Thread(target=monitor, daemon=True)
+        self.monitor_thread.start()
+    
+    def stop_monitoring(self):
+        """Stop energy monitoring and return detailed energy metrics."""
+        self.monitoring = False
+        if hasattr(self, 'monitor_thread'):
+            self.monitor_thread.join(timeout=3.0)
+        
+        if len(self.power_samples) < 2:
+            return {
+                "energy_joules": 0.0,
+                "average_power_watts": 0.0,
+                "duration_seconds": 0.0,
+                "sample_count": 0,
+            }
+        
+        # Calculate energy using trapezoidal integration
+        total_energy = 0.0
+        total_power = 0.0
+        
+        for i in range(1, len(self.power_samples)):
+            prev_time, prev_power = self.power_samples[i - 1]
+            curr_time, curr_power = self.power_samples[i]
+            
+            # Time difference between samples
+            dt = curr_time - prev_time
+            
+            # Trapezoidal integration: area = (p1 + p2) * dt / 2
+            energy_segment = (prev_power + curr_power) * dt / 2.0
+            total_energy += energy_segment
+            total_power += curr_power
+        
+        # Calculate metrics
+        duration = self.power_samples[-1][0] - self.power_samples[0][0]
+        average_power = total_power / (len(self.power_samples) - 1) if len(self.power_samples) > 1 else 0.0
+        
+        return {
+            "energy_joules": total_energy,
+            "average_power_watts": average_power,
+            "duration_seconds": duration,
+            "sample_count": len(self.power_samples),
+        }
+    
+    def cleanup(self):
+        """Cleanup resources (no-op for nvidia-smi version)."""
+        pass
+
+
 def main(model_name: str, dataset_name: str, refiner: bool) -> None:
     """
     Main function to execute the fine-tuning pipeline.
@@ -272,12 +369,51 @@ def main(model_name: str, dataset_name: str, refiner: bool) -> None:
     # Record initial memory usage
     start_gpu_memory = round(torch.cuda.max_memory_reserved() / 1024 / 1024 / 1024, 3)
     print_memory_stats(start_gpu_memory)
-    
+
+    # Prepare feasibility output path
+    os.makedirs("results/feasibility", exist_ok=True)
+    role = "refiner" if refiner else "worker"
+    feasibility_output_file = f"results/feasibility/{dataset_name}_{role}_finetune_{model_name}.json"
+
+    # Initialize energy monitor for fine-tuning
+    energy_monitor = EnergyMonitor()
+
+    # Start timing and energy monitoring for the full fine-tuning run
+    energy_monitor.start_monitoring()
+    start_time = time.time()
+
     # Train the model
     trainer_stats = trainer.train()
-    
+
+    # Stop timing and energy monitoring
+    end_time = time.time()
+    energy_metrics = energy_monitor.stop_monitoring()
+
     # Print final memory statistics
     print_memory_stats(start_gpu_memory, trainer_stats)
+
+    # Compute overall fine-tuning time
+    total_time_seconds = end_time - start_time
+
+    # Build feasibility statistics dictionary
+    feasibility_stats = {
+        "total_time_seconds": total_time_seconds,
+        "total_energy_joules": energy_metrics["energy_joules"],
+        "average_power_watts": energy_metrics["average_power_watts"],
+        "duration_seconds": energy_metrics["duration_seconds"],
+        "sample_count": energy_metrics["sample_count"],
+        "model_name": model_name,
+        "dataset_name": dataset_name,
+        "refiner": refiner,
+    }
+
+    # Save feasibility statistics
+    with open(feasibility_output_file, "w", encoding="utf-8") as f:
+        json.dump(feasibility_stats, f, indent=4)
+    print(f"✅ Feasibility statistics saved to {feasibility_output_file}")
+
+    # Cleanup energy monitor resources
+    energy_monitor.cleanup()
 
 
 if __name__ == "__main__":

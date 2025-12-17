@@ -23,6 +23,8 @@ from src.functions import (  # type: ignore  # noqa
 	collect_global_results,
 	generate_global_latex_table,
 	generate_global_barplots,
+	generate_global_fra_latex_table,
+	generate_global_fra_barplots,
 )
 
 
@@ -96,7 +98,7 @@ def main():
 		if not results:
 			raise SystemExit(f"No results found for dataset '{args.dataset_name}' in {'with_refiner' if args.refiner else 'draft_generator'} directory.")
 		
-		# Generate LaTeX table
+		# Generate LaTeX table (global metrics)
 		latex_table = generate_global_latex_table(results, args.dataset_name, args.refiner)
 		
 		# Save LaTeX table and PNG to global_results directory
@@ -110,11 +112,25 @@ def main():
 			f.write(latex_table)
 		print(f"LaTeX table saved to: {tex_path}")
 		
-		# Generate and save barplots
+		# Generate and save barplots (global metrics)
 		png_filename = f"{args.dataset_name}_{suffix}.png"
 		png_path = output_dir / png_filename
 		generate_global_barplots(results, args.dataset_name, args.refiner, png_path)
 		print(f"Barplots saved to: {png_path}")
+
+		# Generate FRA-only LaTeX table
+		fra_latex_table = generate_global_fra_latex_table(results, args.dataset_name, args.refiner)
+		fra_tex_filename = f"{args.dataset_name}_{suffix}_fra.tex"
+		fra_tex_path = output_dir / fra_tex_filename
+		with fra_tex_path.open("w") as f:
+			f.write(fra_latex_table)
+		print(f"FRA LaTeX table saved to: {fra_tex_path}")
+
+		# Generate and save FRA-only barplots (2x2 grid, two plots per row)
+		fra_png_filename = f"{args.dataset_name}_{suffix}_fra.png"
+		fra_png_path = output_dir / fra_png_filename
+		generate_global_fra_barplots(results, args.dataset_name, args.refiner, fra_png_path)
+		print(f"FRA barplots saved to: {fra_png_path}")
 		
 		return
 

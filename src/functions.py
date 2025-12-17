@@ -335,8 +335,10 @@ def compute_metrics_for_dataset(data: Dict, max_examples: int = 200, dataset_nam
     # FRA metrics collection
     fra_shap_0_05_values: List[float] = []
     fra_shap_0_1_values: List[float] = []
+    fra_shap_0_2_values: List[float] = []
     fra_lime_0_05_values: List[float] = []
     fra_lime_0_1_values: List[float] = []
+    fra_lime_0_2_values: List[float] = []
     fra_total_samples = 0
 
     for idx, key in enumerate(sorted(data.keys(), key=lambda x: int(x))):
@@ -370,10 +372,14 @@ def compute_metrics_for_dataset(data: Dict, max_examples: int = 200, dataset_nam
                     fra_shap_0_05_values.append(fra_metrics["fra_shap_0.05"])
                 if fra_metrics.get("fra_shap_0.1") is not None:
                     fra_shap_0_1_values.append(fra_metrics["fra_shap_0.1"])
+                if fra_metrics.get("fra_shap_0.2") is not None:
+                    fra_shap_0_2_values.append(fra_metrics["fra_shap_0.2"])
                 if fra_metrics.get("fra_lime_0.05") is not None:
                     fra_lime_0_05_values.append(fra_metrics["fra_lime_0.05"])
                 if fra_metrics.get("fra_lime_0.1") is not None:
                     fra_lime_0_1_values.append(fra_metrics["fra_lime_0.1"])
+                if fra_metrics.get("fra_lime_0.2") is not None:
+                    fra_lime_0_2_values.append(fra_metrics["fra_lime_0.2"])
 
     parsing_rate = parsed_success / parsed_total if parsed_total else 0.0
     perfect_ff_rate = perfect_ff / parsed_total if parsed_total else 0.0
@@ -384,8 +390,10 @@ def compute_metrics_for_dataset(data: Dict, max_examples: int = 200, dataset_nam
     # Compute FRA averages
     fra_shap_0_05_avg = statistics.mean(fra_shap_0_05_values) if fra_shap_0_05_values else None
     fra_shap_0_1_avg = statistics.mean(fra_shap_0_1_values) if fra_shap_0_1_values else None
+    fra_shap_0_2_avg = statistics.mean(fra_shap_0_2_values) if fra_shap_0_2_values else None
     fra_lime_0_05_avg = statistics.mean(fra_lime_0_05_values) if fra_lime_0_05_values else None
     fra_lime_0_1_avg = statistics.mean(fra_lime_0_1_values) if fra_lime_0_1_values else None
+    fra_lime_0_2_avg = statistics.mean(fra_lime_0_2_values) if fra_lime_0_2_values else None
 
     result = {
         "parsing_rate": round(parsing_rate, 4),
@@ -395,8 +403,10 @@ def compute_metrics_for_dataset(data: Dict, max_examples: int = 200, dataset_nam
         "target_f": round(target_f_rate, 4),
         "fra_shap_0.05": round(fra_shap_0_05_avg, 4) if fra_shap_0_05_avg is not None else None,
         "fra_shap_0.1": round(fra_shap_0_1_avg, 4) if fra_shap_0_1_avg is not None else None,
+        "fra_shap_0.2": round(fra_shap_0_2_avg, 4) if fra_shap_0_2_avg is not None else None,
         "fra_lime_0.05": round(fra_lime_0_05_avg, 4) if fra_lime_0_05_avg is not None else None,
         "fra_lime_0.1": round(fra_lime_0_1_avg, 4) if fra_lime_0_1_avg is not None else None,
+        "fra_lime_0.2": round(fra_lime_0_2_avg, 4) if fra_lime_0_2_avg is not None else None,
         "fra_total_samples": fra_total_samples,
         "parsed_total": parsed_total,
         "comparable_total": comparable_total,
@@ -720,26 +730,28 @@ def _compute_shap_importance(
         shap_factual = explainer.shap_values(factual_df)
         shap_counterfactual = explainer.shap_values(counterfactual_df)
         
-        # Handle multi-class output (take first class if list)
+        # Handle multi-class output: select class based on factual prediction
         if isinstance(shap_factual, list):
-            shap_factual = shap_factual[0]
-        if isinstance(shap_counterfactual, list):
-            shap_counterfactual = shap_counterfactual[0]
+            factual_pred = int(model.predict(factual_df)[0])
+            shap_factual = shap_factual[factual_pred]
+            shap_counterfactual = shap_counterfactual[factual_pred]
+
         
         # Ensure we have 1D arrays for comparison
-        # Flatten to 1D if needed
-        if shap_factual.ndim > 1:
-            shap_factual = shap_factual.flatten()
-        if shap_counterfactual.ndim > 1:
-            shap_counterfactual = shap_counterfactual.flatten()
+        if shap_factual.ndim == 2:
+            shap_factual = shap_factual[0]
+        if shap_counterfactual.ndim == 2:
+            shap_counterfactual = shap_counterfactual[0]
         
         # Ensure same length
         min_len = min(len(shap_factual), len(shap_counterfactual))
         shap_factual = shap_factual[:min_len]
         shap_counterfactual = shap_counterfactual[:min_len]
         
-        # Calculate absolute difference (result is 1D array)
+        # Calculate absolute difference (result should be a 1D array)
         shap_diff = np.abs(shap_factual - shap_counterfactual)
+        # Ensure shap_diff is a flat 1D numpy array of floats to avoid nested-array issues
+        shap_diff = np.asarray(shap_diff, dtype=float).ravel()
         
         # Map to feature names and filter to changed features only
         importance_dict = {}
@@ -756,12 +768,8 @@ def _compute_shap_importance(
                         matching_feat = cf
                         break
                 if matching_feat:
-                    # Extract scalar value from numpy array
-                    value = shap_diff[idx]
-                    if isinstance(value, np.ndarray):
-                        value = value.item() if value.size == 1 else float(value[0])
-                    else:
-                        value = float(value)
+                    # Extract scalar value safely from shap_diff
+                    value = float(shap_diff[idx])
                     importance_dict[matching_feat] = value
         
         return importance_dict if importance_dict else None
@@ -850,43 +858,56 @@ def _compute_lime_importance(
             num_features=len(feature_names)
         )
         
-        # Extract feature importance (absolute values)
-        importance_dict = {}
-        changed_feature_lower = [cf.lower() for cf in changed_features]
+        # Get predicted class for factual instance
+        # Use argmax of predicted probabilities to determine the class index
+        factual_proba = predict_proba_wrapper(factual_for_lime.reshape(1, -1))[0]
+        class_idx = int(np.argmax(factual_proba))
         
-        # explanation.as_list() returns list of (feature_name, importance) tuples
-        for feat_name_str, importance in explanation.as_list():
-            # feat_name_str is typically the feature name as string
-            # Try to match it to our feature names (case-insensitive)
-            matching_feat = None
-            for cf in changed_features:
-                # Check if the LIME feature name matches our changed feature
-                if (cf.lower() in feat_name_str.lower() or 
-                    feat_name_str.lower() in cf.lower() or
-                    cf.lower() == feat_name_str.lower()):
-                    matching_feat = cf
-                    break
-            
-            # If no direct match, try matching by index in feature_names
-            if matching_feat is None:
+        # Use as_map() to get (feature_index, weight) tuples directly.
+        # Keys of as_map() can be class *labels* (model.classes_) rather than
+        # plain indices, so we resolve the correct key robustly.
+        as_map_dict = explanation.as_map()
+        target_key = None
+        
+        # 1) Direct hit with index key
+        if class_idx in as_map_dict:
+            target_key = class_idx
+        else:
+            # 2) Try mapping via model.classes_ if available
+            try:
+                if hasattr(model, "classes_"):
+                    class_label = model.classes_[class_idx]
+                    if class_label in as_map_dict:
+                        target_key = class_label
+            except Exception:
+                target_key = None
+        
+        # 3) Fallback: use first available key to avoid KeyError
+        if target_key is None:
+            # If there is only one class in as_map, take it
+            if len(as_map_dict) == 1:
+                target_key = next(iter(as_map_dict.keys()))
+            else:
+                # Try to select by position; otherwise just take the first key
                 try:
-                    # Sometimes LIME returns feature names with indices like "feature_0"
-                    # Try to extract index
-                    import re
-                    idx_match = re.search(r'(\d+)', feat_name_str)
-                    if idx_match:
-                        feat_idx = int(idx_match.group(1))
-                        if feat_idx < len(feature_names):
-                            feat_name = feature_names[feat_idx]
-                            for cf in changed_features:
-                                if cf.lower() == feat_name.lower():
-                                    matching_feat = cf
-                                    break
-                except:
-                    pass
-            
-            if matching_feat:
-                importance_dict[matching_feat] = abs(importance)
+                    keys_list = list(as_map_dict.keys())
+                    target_key = keys_list[class_idx] if class_idx < len(keys_list) else keys_list[0]
+                except Exception:
+                    target_key = next(iter(as_map_dict.keys()))
+        
+        weights = dict(as_map_dict[target_key])  # {feat_idx: weight}
+        
+        # Build importance dict by mapping feature indices to feature names
+        importance_dict = {}
+        changed_set = {cf.lower(): cf for cf in changed_features}
+        
+        for feat_idx, weight in weights.items():
+            if feat_idx < len(feature_names):
+                feat_name = feature_names[feat_idx]
+                # Match using case-insensitive lookup
+                matching_feat = changed_set.get(feat_name.lower())
+                if matching_feat is not None:
+                    importance_dict[matching_feat] = abs(float(weight))
         
         return importance_dict if importance_dict else None
     except Exception as e:
@@ -926,6 +947,9 @@ def _create_ground_truth_ranking(importance_dict: Dict[str, float], tie_factor: 
     
     Format matches LLM output: {"feature_x": 1, "feature_y": 2, ...}
     where lower rank number = higher importance.
+    
+    Uses dense ranks and compares against the anchor of the current tie group
+    to avoid incorrect chaining (A tied to B, B tied to C, but A not tied to C).
     """
     if not importance_dict:
         return {}
@@ -934,35 +958,61 @@ def _create_ground_truth_ranking(importance_dict: Dict[str, float], tie_factor: 
     sorted_features = sorted(importance_dict.items(), key=lambda x: x[1], reverse=True)
     
     ranking = {}
-    current_rank = 1
     
-    for i, (feat_name, magnitude) in enumerate(sorted_features):
-        if i == 0:
-            # First feature always gets rank 1
+    # Handle first feature
+    if not sorted_features:
+        return ranking
+    
+    # Initialize with first feature as anchor
+    first_feat, first_mag = sorted_features[0]
+    group_anchor_mag = first_mag
+    current_rank = 1
+    ranking[first_feat] = current_rank
+    
+    # Process remaining features
+    for feat_name, magnitude in sorted_features[1:]:
+        # Compare against the anchor of the current tie group, not just the previous item
+        # This prevents incorrect chaining (A tied to B, B tied to C, but A not tied to C)
+        if abs(magnitude - group_anchor_mag) <= tie_factor:
+            # Within tie_factor of the group anchor: same rank (tied)
             ranking[feat_name] = current_rank
         else:
-            # Check if this feature is within tie_factor of any previous feature in the same tied group
-            # We check against the most recent feature's magnitude
-            prev_magnitude = sorted_features[i - 1][1]
-            if abs(magnitude - prev_magnitude) <= tie_factor:
-                # Same rank as previous (tied)
-                ranking[feat_name] = current_rank
-            else:
-                # New rank: count how many features we've seen so far (this is the position)
-                # Rank should be the position of the first feature in this new group
-                current_rank = i + 1
-                ranking[feat_name] = current_rank
+            # Outside tie_factor: start new group with dense rank increment
+            current_rank += 1
+            group_anchor_mag = magnitude  # New anchor for this group
+            ranking[feat_name] = current_rank
     
     return ranking
 
 
-def _compute_kendall_tau_with_ties(ranking1: Dict[str, int], ranking2: Dict[str, int]) -> Optional[float]:
+def _compute_kendall_tau_with_ties(ranking1: Dict[str, int], ranking2: Dict[str, int], required_features: Optional[List[str]] = None) -> Optional[float]:
     """
     Compute Kendall tau between two rankings, accounting for ties.
     Returns normalized value: (tau + 1) / 2, or None if computation fails.
+    
+    Args:
+        ranking1: First ranking (ground truth)
+        ranking2: Second ranking (predicted)
+        required_features: If provided, both rankings must contain all these features.
+                          If coverage is incomplete, returns None to avoid inflated scores.
     """
     if not ranking1 or not ranking2:
         return None
+    
+    # Require full coverage if required_features is provided
+    if required_features is not None:
+        # Create case-insensitive lookup sets
+        ranking1_features_lower = {k.lower(): k for k in ranking1.keys()}
+        ranking2_features_lower = {k.lower(): k for k in ranking2.keys()}
+        required_set_lower = {rf.lower() for rf in required_features}
+        
+        # Check if both rankings contain all required features (case-insensitive)
+        ranking1_has_all = required_set_lower.issubset(ranking1_features_lower.keys())
+        ranking2_has_all = required_set_lower.issubset(ranking2_features_lower.keys())
+        
+        if not (ranking1_has_all and ranking2_has_all):
+            # Incomplete coverage: return None to avoid inflated scores
+            return None
     
     # Get common features
     common_features = set(ranking1.keys()) & set(ranking2.keys())
@@ -1015,13 +1065,15 @@ def compute_fra_metrics(entry: Dict, parsed: Dict, dataset_name: str) -> Dict[st
     """
     Compute FRA metrics for an entry.
     Only computes if entry has perfectFF and num_changes > 1.
-    Returns dict with 4 FRA values: fra_shap_0.05, fra_shap_0.1, fra_lime_0.05, fra_lime_0.1
+    Returns dict with 6 FRA values: fra_shap_0.05, fra_shap_0.1, fra_shap_0.2, fra_lime_0.05, fra_lime_0.1, fra_lime_0.2
     """
     result = {
         "fra_shap_0.05": None,
         "fra_shap_0.1": None,
+        "fra_shap_0.2": None,
         "fra_lime_0.05": None,
         "fra_lime_0.1": None,
+        "fra_lime_0.2": None,
     }
     
     # Check if we have features_importance_ranking in parsed response
@@ -1131,7 +1183,7 @@ def compute_fra_metrics(entry: Dict, parsed: Dict, dataset_name: str) -> Dict[st
     
     # Compute for each explainer and alpha combination
     for explainer_name, explainer_func in [("shap", _compute_shap_importance), ("lime", _compute_lime_importance)]:
-        for alpha in [0.05, 0.1]:
+        for alpha in [0.05, 0.1, 0.2]:
             try:
                 # Compute importance
                 if explainer_name == "shap":
@@ -1148,7 +1200,7 @@ def compute_fra_metrics(entry: Dict, parsed: Dict, dataset_name: str) -> Dict[st
                 
                 # Compute tie factor
                 magnitudes = list(importance_dict.values())
-                tie_factor = _compute_tie_factor(magnitudes, len(changed_features), alpha)
+                tie_factor = _compute_tie_factor(magnitudes, len(importance_dict), alpha)
                 
                 # Create ground-truth ranking
                 ground_truth_ranking = _create_ground_truth_ranking(importance_dict, tie_factor)
@@ -1156,8 +1208,9 @@ def compute_fra_metrics(entry: Dict, parsed: Dict, dataset_name: str) -> Dict[st
                 if not ground_truth_ranking:
                     continue
                 
-                # Compute Kendall tau
-                tau_normalized = _compute_kendall_tau_with_ties(ground_truth_ranking, predicted_ranking)
+                # Compute Kendall tau with full coverage requirement
+                # This prevents inflated scores when LLM ranking omits features
+                tau_normalized = _compute_kendall_tau_with_ties(ground_truth_ranking, predicted_ranking, required_features=changed_features)
                 
                 if tau_normalized is not None:
                     key = f"fra_{explainer_name}_{alpha}"
@@ -1260,12 +1313,12 @@ def _get_metric_pair(plain_data: Dict[str, Any], ft_data: Dict[str, Any], metric
 
 
 def generate_global_latex_table(results: Dict[str, Dict[str, Any]], dataset_name: str, refiner: bool) -> str:
-    """Generate LaTeX table with plain/finetuned values in same column separated by '/'."""
+    """Generate LaTeX table with plain/finetuned values in same column separated by '/' (no FRA column)."""
     header = (
         "\\begin{table*}[htbp]\n"
         "    \\centering\n"
-        "    \\begin{tabular}{l|p{2.5cm}|p{2.5cm}|p{2.5cm}|p{2.5cm}|p{2.5cm}}\n"
-        "        \\textbf{Model} & \\textbf{Avg. FF} \\newline (Plain / FT) & \\textbf{PFF} \\newline (Plain / FT) & \\textbf{TF} \\newline (Plain / FT) & \\textbf{FRA} \\newline (Plain / FT) & \\textbf{JPR} \\newline (Plain / FT) \\\\ \n"
+        "    \\begin{tabular}{l|p{2.5cm}|p{2.5cm}|p{2.5cm}|p{2.5cm}}\n"
+        "        \\textbf{Model} & \\textbf{Avg. FF} \\newline (Plain / FT) & \\textbf{PFF} \\newline (Plain / FT) & \\textbf{TF} \\newline (Plain / FT) & \\textbf{JPR} \\newline (Plain / FT) \\\\ \n"
         "        \\midrule \n"
     )
     
@@ -1277,15 +1330,14 @@ def generate_global_latex_table(results: Dict[str, Dict[str, Any]], dataset_name
         
         clean_name = _clean_model_name(model_name)
         
-        # Format each metric as plain / ft (order: Avg. FF, PFF, TF, FRA, JPR)
+        # Format each metric as plain / ft (order: Avg. FF, PFF, TF, JPR)
         avg_ff = _get_metric_pair(plain_data, ft_data, "avg_ff")
         perfect_ff = _get_metric_pair(plain_data, ft_data, "perfect_ff")
         target_f = _get_metric_pair(plain_data, ft_data, "target_f")
-        fra = _get_metric_pair(plain_data, ft_data, "fra")
         parsing_rate = _get_metric_pair(plain_data, ft_data, "parsing_rate")
         
-        # Order: Model, Avg. FF, PFF, TF, FRA, JPR
-        row = " & ".join([clean_name, avg_ff, perfect_ff, target_f, fra, parsing_rate]) + " \\\\"
+        # Order: Model, Avg. FF, PFF, TF, JPR
+        row = " & ".join([clean_name, avg_ff, perfect_ff, target_f, parsing_rate]) + " \\\\"
         body_lines.append(row)
     
     # Build footer without f-string issues
@@ -1302,7 +1354,7 @@ def generate_global_latex_table(results: Dict[str, Dict[str, Any]], dataset_name
 
 
 def generate_global_barplots(results: Dict[str, Dict[str, Any]], dataset_name: str, refiner: bool, output_path: Path) -> None:
-    """Generate barplots with 5 subplots showing metrics comparison."""
+    """Generate barplots with 4 subplots (2x2) showing metrics comparison (no FRA plot)."""
     import matplotlib.pyplot as plt
     import numpy as np
     
@@ -1310,16 +1362,16 @@ def generate_global_barplots(results: Dict[str, Dict[str, Any]], dataset_name: s
     models = sorted(results.keys())
     clean_model_names = [_clean_model_name(m) for m in models]
     
+    # Only 4 metrics here; FRA has its own dedicated plots.
     metrics = [
         ("avg_ff", "Avg. FF"),
         ("perfect_ff", "Perfect FF"),
         ("target_f", "TargetF"),
-        ("fra", "FRA"),
         ("parsing_rate", "Parsing Rate"),
     ]
     
-    # Create figure with 2 rows: 3 plots on first row, 2 plots on second row
-    fig, axes = plt.subplots(2, 3, figsize=(18, 8))
+    # Create figure with 2 rows and 2 columns (two plots per row)
+    fig, axes = plt.subplots(2, 2, figsize=(14, 8))
     axes = axes.flatten()  # Flatten to 1D array for easier indexing
     
     # Get color palette
@@ -1331,8 +1383,8 @@ def generate_global_barplots(results: Dict[str, Dict[str, Any]], dataset_name: s
     for idx, (metric_key, metric_label) in enumerate(metrics):
         ax = axes[idx]
         
-        plain_values = []
-        ft_values = []
+        plain_values: List[float] = []
+        ft_values: List[float] = []
         
         for model_name in models:
             model_data = results[model_name]
@@ -1342,31 +1394,200 @@ def generate_global_barplots(results: Dict[str, Dict[str, Any]], dataset_name: s
             plain_val = plain_data.get(metric_key) if plain_data else None
             ft_val = ft_data.get(metric_key) if ft_data else None
             
-            plain_values.append(plain_val if plain_val is not None else 0)
-            ft_values.append(ft_val if ft_val is not None else 0)
+            # Treat None as 0.0 for plotting
+            plain_values.append(float(plain_val) if plain_val is not None else 0.0)
+            ft_values.append(float(ft_val) if ft_val is not None else 0.0)
         
         # Create all plain bars first, then all finetuned bars
-        plain_bars = ax.bar(x - width/2, plain_values, width, color=colors, alpha=0.8, label="Plain" if idx == 0 else "")
-        ft_bars = ax.bar(x + width/2, ft_values, width, color=colors, alpha=0.8, hatch='///', edgecolor='black', linewidth=0.5, label="Fine-Tuned" if idx == 0 else "")
+        ax.bar(
+            x - width / 2,
+            plain_values,
+            width,
+            color=colors,
+            alpha=0.8,
+            label="Plain" if idx == 0 else "",
+        )
+        ax.bar(
+            x + width / 2,
+            ft_values,
+            width,
+            color=colors,
+            alpha=0.8,
+            hatch="///",
+            edgecolor="black",
+            linewidth=0.5,
+            label="Fine-Tuned" if idx == 0 else "",
+        )
         
         ax.set_xlabel("Model", fontsize=10)
         ax.set_ylabel(metric_label, fontsize=10)
-        ax.set_title(metric_label, fontsize=11, fontweight='bold')
+        ax.set_title(metric_label, fontsize=11, fontweight="bold")
         ax.set_xticks(x)
-        ax.set_xticklabels(clean_model_names, rotation=45, ha='right', fontsize=9)
-        ax.set_ylim(0, max(max(plain_values), max(ft_values)) * 1.1 if max(plain_values) > 0 or max(ft_values) > 0 else 1.0)
-        ax.grid(True, linestyle='--', alpha=0.3, axis='y')
-    
-    # Hide the 6th subplot (index 5) since we only have 5 metrics
-    axes[5].axis('off')
+        ax.set_xticklabels(clean_model_names, rotation=45, ha="right", fontsize=9)
+        max_val = max(max(plain_values), max(ft_values)) if plain_values or ft_values else 0.0
+        ax.set_ylim(0, max_val * 1.1 if max_val > 0 else 1.0)
+        ax.grid(True, linestyle="--", alpha=0.3, axis="y")
     
     # Add legend only on first subplot
     if len(models) > 0:
-        axes[0].legend(loc='upper left', fontsize=8, ncol=2)
+        axes[0].legend(loc="upper left", fontsize=8, ncol=2)
     
-    plt.suptitle(f"{dataset_name} - {'Worker+Refiner' if refiner else 'Worker Only'}", fontsize=14, fontweight='bold')
+    plt.suptitle(f"{dataset_name} - {'Worker+Refiner' if refiner else 'Worker Only'}", fontsize=14, fontweight="bold")
     plt.tight_layout()
     
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
+
+
+def generate_global_fra_latex_table(results: Dict[str, Dict[str, Any]], dataset_name: str, refiner: bool) -> str:
+    """
+    Generate LaTeX table for FRA metrics only.
+    Columns: Model, FRA SHAP 0.05, FRA SHAP 0.1, FRA SHAP 0.2, FRA LIME 0.05, FRA LIME 0.1, FRA LIME 0.2.
+    Each FRA cell shows Plain / FT; if a value is None it is rendered as n.d.
+    """
+    header = (
+        "\\begin{table*}[htbp]\n"
+        "    \\centering\n"
+        "    \\begin{tabular}{l|p{2.8cm}|p{2.8cm}|p{2.8cm}|p{2.8cm}}\n"
+        "        \\textbf{Model} & \\textbf{FRA SHAP 0.05} \\\\ (Plain / FT) & "
+        "\\textbf{FRA SHAP 0.1} \\\\ (Plain / FT) & "
+        "\\textbf{FRA SHAP 0.2} \\\\ (Plain / FT) & "
+        "\\textbf{FRA LIME 0.05} \\\\ (Plain / FT) & "
+        "\\textbf{FRA LIME 0.1} \\\\ (Plain / FT) & "
+        "\\textbf{FRA LIME 0.2} \\\\ (Plain / FT) \\\\ \n"
+        "\\textbf{FRA LIME 0.1} \\\\ (Plain / FT) \\\\ \n"
+        "        \\midrule \n"
+    )
+
+    body_lines: List[str] = []
+    for model_name in sorted(results.keys()):
+        model_data = results[model_name]
+        plain_data = model_data.get("plain")
+        ft_data = model_data.get("ft")
+
+        clean_name = _clean_model_name(model_name)
+
+        fra_shap_005 = _get_metric_pair(plain_data, ft_data, "fra_shap_0.05")
+        fra_shap_01 = _get_metric_pair(plain_data, ft_data, "fra_shap_0.1")
+        fra_shap_02 = _get_metric_pair(plain_data, ft_data, "fra_shap_0.2")
+        fra_lime_005 = _get_metric_pair(plain_data, ft_data, "fra_lime_0.05")
+        fra_lime_01 = _get_metric_pair(plain_data, ft_data, "fra_lime_0.1")
+        fra_lime_02 = _get_metric_pair(plain_data, ft_data, "fra_lime_0.2")
+        fra_lime_01 = _get_metric_pair(plain_data, ft_data, "fra_lime_0.1")
+
+        row = " & ".join(
+            [clean_name, fra_shap_005, fra_shap_01, fra_shap_02, fra_lime_005, fra_lime_01, fra_lime_02]
+        ) + " \\\\"
+        body_lines.append(row)
+
+    mode_str = "worker+refiner" if refiner else "worker only"
+    label_suffix = "-refiner-fra" if refiner else "-draft-fra"
+    footer = (
+        "    \\end{tabular} \n"
+        "    \\caption{FRA metrics for " + mode_str + " on " + dataset_name + " dataset.}\n"
+        "    \\label{tab:fra-results-" + dataset_name + label_suffix + "}\n"
+        " \\end{table*}"
+    )
+
+    return header + "\n".join(body_lines) + "\n" + footer
+
+
+def generate_global_fra_barplots(
+    results: Dict[str, Dict[str, Any]],
+    dataset_name: str,
+    refiner: bool,
+    output_path: Path,
+) -> None:
+    """
+    Generate barplots for FRA metrics only.
+    Layout: 2x3 subplots (three plots per row).
+    None values are treated as 0 in the plots.
+    """
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    models = sorted(results.keys())
+    if not models:
+        return
+
+    clean_model_names = [_clean_model_name(m) for m in models]
+
+    metrics = [
+        ("fra_shap_0.05", "FRA SHAP 0.05"),
+        ("fra_shap_0.1", "FRA SHAP 0.1"),
+        ("fra_shap_0.2", "FRA SHAP 0.2"),
+        ("fra_lime_0.05", "FRA LIME 0.05"),
+        ("fra_lime_0.1", "FRA LIME 0.1"),
+        ("fra_lime_0.2", "FRA LIME 0.2"),
+    ]
+
+    fig, axes = plt.subplots(2, 3, figsize=(14, 8))
+    axes = axes.flatten()
+
+    colors = plt.cm.tab10(np.linspace(0, 1, len(models)))
+    x = np.arange(len(models))
+    width = 0.35
+
+    for idx, (metric_key, metric_label) in enumerate(metrics):
+        ax = axes[idx]
+
+        plain_values: List[float] = []
+        ft_values: List[float] = []
+
+        for model_name in models:
+            model_data = results[model_name]
+            plain_data = model_data.get("plain")
+            ft_data = model_data.get("ft")
+
+            plain_val = plain_data.get(metric_key) if plain_data else None
+            ft_val = ft_data.get(metric_key) if ft_data else None
+
+            # None -> 0.0 for plotting
+            plain_values.append(float(plain_val) if plain_val is not None else 0.0)
+            ft_values.append(float(ft_val) if ft_val is not None else 0.0)
+
+        ax.bar(
+            x - width / 2,
+            plain_values,
+            width,
+            color=colors,
+            alpha=0.8,
+            label="Plain" if idx == 0 else "",
+        )
+        ax.bar(
+            x + width / 2,
+            ft_values,
+            width,
+            color=colors,
+            alpha=0.8,
+            hatch="///",
+            edgecolor="black",
+            linewidth=0.5,
+            label="Fine-Tuned" if idx == 0 else "",
+        )
+
+        ax.set_xlabel("Model", fontsize=10)
+        ax.set_ylabel(metric_label, fontsize=10)
+        ax.set_title(metric_label, fontsize=11, fontweight="bold")
+        ax.set_xticks(x)
+        ax.set_xticklabels(clean_model_names, rotation=45, ha="right", fontsize=9)
+
+        max_val = max(max(plain_values), max(ft_values)) if plain_values or ft_values else 0.0
+        ax.set_ylim(0, max_val * 1.1 if max_val > 0 else 1.0)
+        ax.grid(True, linestyle="--", alpha=0.3, axis="y")
+
+    # Legend only on first subplot
+    axes[0].legend(loc="upper left", fontsize=8, ncol=2)
+
+    plt.suptitle(
+        f"{dataset_name} - {'Worker+Refiner' if refiner else 'Worker Only'} FRA Metrics",
+        fontsize=14,
+        fontweight="bold",
+    )
+    plt.tight_layout()
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
