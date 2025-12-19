@@ -19,12 +19,12 @@ model_list=(
     "unsloth_qwen3_1.7B"
     "unsloth_llama_3B-Instruct"
     "unsloth_qwen_3B"
-    "unsloth_qwen3_4B-Instruct"
+    "unsloth_qwen3_4B"
 )
 
 # Iterate over each model configuration and run validation.py accordingly.
 for model in "${model_list[@]}"; do
     echo "Running validation.py with model '$model'..."
-    python validation.py --dataset=adult --fine_tuned --worker_model_name="$model"
+    python validation.py --dataset=diabetes --fine_tuned --worker_model_name="$model"
 done
 
