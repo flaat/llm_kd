@@ -432,6 +432,8 @@ def _run_worker_only_pipeline(
         dataset_key = dataset
         if dataset_key == "adult":
             dataset_key = "adult income"
+        elif dataset_key == "california":
+            dataset_key = "california housing"
 
         if dataset_name.lower() == dataset_key:
             # Ensure output directory structure
