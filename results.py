@@ -103,8 +103,11 @@ def main():
 		
 		base_dir = Path("results/number_narratives")
 		
+		# Use multiple alpha values
+		alphas = [0.5, 0.6, 0.8]
+		
 		print(f"Collecting NCS metrics for datasets: {args.datasets}, models: {args.models}")
-		print(f"Parameters: K={args.num_narratives}, n_start={args.n_start}, alpha={args.alpha}")
+		print(f"Parameters: K={args.num_narratives}, n_start={args.n_start}, alphas={alphas}")
 		
 		metrics = collect_number_narratives_metrics(
 			base_dir=base_dir,
@@ -112,26 +115,59 @@ def main():
 			models=args.models,
 			num_narratives=args.num_narratives,
 			n_start=args.n_start,
-			alpha=args.alpha
+			alphas=alphas
 		)
 		
-		# Generate plots for each dataset
-		output_dir = base_dir / "plots"
-		output_dir.mkdir(parents=True, exist_ok=True)
+		# Generate plots for each dataset in subfolders
+		base_output_dir = base_dir / "plots"
+		base_output_dir.mkdir(parents=True, exist_ok=True)
 		
 		for dataset in args.datasets:
 			if dataset in metrics and metrics[dataset]:
-				plot_path = output_dir / f"{dataset}_ncs.png"
+				# Create dataset-specific subfolder
+				dataset_output_dir = base_output_dir / dataset
+				dataset_output_dir.mkdir(parents=True, exist_ok=True)
+				
+				# Plot NCS for each alpha
+				for alpha in alphas:
+					metric_key = f"ncs_alpha_{alpha}"
+					plot_path = dataset_output_dir / f"ncs_alpha_{alpha}.png"
+					plot_number_narratives_metrics(
+						metrics[dataset],
+						plot_path,
+						dataset,
+						metric_key=metric_key,
+						metric_label=f"NCS (α={alpha})",
+						n_start=args.n_start,
+						num_narratives=args.num_narratives
+					)
+				
+				# Plot Jaccard similarity
+				plot_path = dataset_output_dir / "jaccard.png"
 				plot_number_narratives_metrics(
 					metrics[dataset],
 					plot_path,
 					dataset,
+					metric_key="jaccard",
+					metric_label="Jaccard Similarity",
+					n_start=args.n_start,
+					num_narratives=args.num_narratives
+				)
+				
+				# Plot Ranking similarity
+				plot_path = dataset_output_dir / "ranking.png"
+				plot_number_narratives_metrics(
+					metrics[dataset],
+					plot_path,
+					dataset,
+					metric_key="ranking",
+					metric_label="Ranking Similarity (Kendall τ)",
 					n_start=args.n_start,
 					num_narratives=args.num_narratives
 				)
 				
 				# Also save metrics to JSON
-				metrics_json_path = output_dir / f"{dataset}_ncs_metrics.json"
+				metrics_json_path = dataset_output_dir / "metrics.json"
 				# Convert int keys to str for JSON serialization
 				serializable_metrics = {}
 				for model, model_data in metrics[dataset].items():

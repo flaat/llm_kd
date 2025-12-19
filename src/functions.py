@@ -1755,14 +1755,16 @@ def collect_number_narratives_metrics(
     models: List[str],
     num_narratives: int,
     n_start: int = 3,
-    alpha: float = 0.6
-) -> Dict[str, Dict[str, Dict[int, Dict[str, float]]]]:
+    alphas: List[float] = [0.6]
+) -> Dict[str, Dict[str, Dict[int, Dict[str, Any]]]]:
     """
-    Collect NCS metrics for number-of-narratives analysis.
+    Collect NCS, Jaccard, and Ranking metrics for number-of-narratives analysis.
     
     For each sample, for each N in [n_start, K]:
     - Enumerate ALL C(K, N) subsets of the K narratives
-    - Compute NCS for each subset
+    - Compute NCS for each subset (for each alpha)
+    - Compute average pairwise Jaccard similarity
+    - Compute average pairwise Ranking (Kendall tau) similarity
     - Aggregate across all samples: mean and std per N per model
     
     Args:
@@ -1771,14 +1773,15 @@ def collect_number_narratives_metrics(
         models: List of model names to process
         num_narratives: K value (max narratives generated per sample)
         n_start: Minimum N for subset sampling (default 3)
-        alpha: Alpha parameter for coherence score (default 0.6)
+        alphas: List of alpha parameters for coherence score (default [0.6])
     
     Returns:
-        Dict structure: {dataset: {model: {N: {"mean": float, "std": float}}}}
+        Dict structure: {dataset: {model: {N: {"ncs_alpha_0.5": {...}, "ncs_alpha_0.6": {...}, 
+                "ncs_alpha_0.8": {...}, "jaccard": {...}, "ranking": {...}}}}}
     """
     from itertools import combinations
     
-    results: Dict[str, Dict[str, Dict[int, Dict[str, float]]]] = {}
+    results: Dict[str, Dict[str, Dict[int, Dict[str, Any]]]] = {}
     
     for dataset in datasets:
         results[dataset] = {}
@@ -1798,8 +1801,15 @@ def collect_number_narratives_metrics(
                 print(f"Warning: Could not load {json_path}: {e}")
                 continue
             
-            # Collect NCS values per N across all samples
-            ncs_per_n: Dict[int, List[float]] = {n: [] for n in range(n_start, num_narratives + 1)}
+            # Collect metrics per N across all samples
+            # Structure: {n: {"ncs_alpha_X": [...], "jaccard": [...], "ranking": [...]}}
+            metrics_per_n: Dict[int, Dict[str, List[float]]] = {
+                n: {f"ncs_alpha_{alpha}": [] for alpha in alphas}
+                for n in range(n_start, num_narratives + 1)
+            }
+            for n in range(n_start, num_narratives + 1):
+                metrics_per_n[n]["jaccard"] = []
+                metrics_per_n[n]["ranking"] = []
             
             for sample_id, sample_data in data.items():
                 rankings = sample_data.get("features_importance_ranking", [])
@@ -1811,28 +1821,86 @@ def collect_number_narratives_metrics(
                     # Not enough valid rankings for this sample
                     continue
                 
-                # For each N, enumerate all C(K, N) subsets and compute NCS
+                # For each N, enumerate all C(K, N) subsets and compute metrics
                 k = len(valid_rankings)
                 for n in range(n_start, min(num_narratives, k) + 1):
                     # Get all combinations of size n
                     for subset_indices in combinations(range(k), n):
                         subset_rankings = [valid_rankings[i] for i in subset_indices]
-                        ncs = compute_narrative_coherence_score(subset_rankings, alpha)
-                        if not np.isnan(ncs):
-                            ncs_per_n[n].append(ncs)
+                        
+                        # Compute NCS for each alpha
+                        for alpha in alphas:
+                            ncs = compute_narrative_coherence_score(subset_rankings, alpha)
+                            if not np.isnan(ncs):
+                                metrics_per_n[n][f"ncs_alpha_{alpha}"].append(ncs)
+                        
+                        # Compute average pairwise Jaccard similarity
+                        jaccard_values = []
+                        for i in range(len(subset_rankings)):
+                            for j in range(i + 1, len(subset_rankings)):
+                                jaccard = compute_jaccard_similarity(subset_rankings[i], subset_rankings[j])
+                                jaccard_values.append(jaccard)
+                        if jaccard_values:
+                            avg_jaccard = np.mean(jaccard_values)
+                            metrics_per_n[n]["jaccard"].append(avg_jaccard)
+                        
+                        # Compute average pairwise Ranking (Kendall tau) similarity
+                        ranking_values = []
+                        for i in range(len(subset_rankings)):
+                            for j in range(i + 1, len(subset_rankings)):
+                                ranking = compute_kendall_tau_normalized(subset_rankings[i], subset_rankings[j])
+                                ranking_values.append(ranking)
+                        if ranking_values:
+                            avg_ranking = np.mean(ranking_values)
+                            metrics_per_n[n]["ranking"].append(avg_ranking)
             
-            # Compute mean and std for each N
-            model_results: Dict[int, Dict[str, float]] = {}
+            # Compute mean and std for each N and each metric
+            model_results: Dict[int, Dict[str, Any]] = {}
             for n in range(n_start, num_narratives + 1):
-                values = ncs_per_n[n]
-                if values:
-                    model_results[n] = {
-                        "mean": float(np.mean(values)),
-                        "std": float(np.std(values)),
-                        "count": len(values),
+                model_results[n] = {}
+                
+                # Process NCS for each alpha
+                for alpha in alphas:
+                    key = f"ncs_alpha_{alpha}"
+                    values = metrics_per_n[n][key]
+                    if values:
+                        model_results[n][key] = {
+                            "mean": float(np.mean(values)),
+                            "std": float(np.std(values)),
+                            "count": len(values),
+                        }
+                    else:
+                        model_results[n][key] = {
+                            "mean": float("nan"),
+                            "std": float("nan"),
+                            "count": 0,
+                        }
+                
+                # Process Jaccard
+                jaccard_values = metrics_per_n[n]["jaccard"]
+                if jaccard_values:
+                    model_results[n]["jaccard"] = {
+                        "mean": float(np.mean(jaccard_values)),
+                        "std": float(np.std(jaccard_values)),
+                        "count": len(jaccard_values),
                     }
                 else:
-                    model_results[n] = {
+                    model_results[n]["jaccard"] = {
+                        "mean": float("nan"),
+                        "std": float("nan"),
+                        "count": 0,
+                    }
+                
+                # Process Ranking
+                ranking_values = metrics_per_n[n]["ranking"]
+                if ranking_values:
+                    model_results[n]["ranking"] = {
+                        "mean": float(np.mean(ranking_values)),
+                        "std": float(np.std(ranking_values)),
+                        "count": len(ranking_values),
+                    }
+                else:
+                    model_results[n]["ranking"] = {
                         "mean": float("nan"),
                         "std": float("nan"),
                         "count": 0,
@@ -1844,19 +1912,23 @@ def collect_number_narratives_metrics(
 
 
 def plot_number_narratives_metrics(
-    metrics: Dict[str, Dict[int, Dict[str, float]]],
+    metrics: Dict[str, Dict[int, Dict[str, Any]]],
     output_path: Path,
     dataset_name: str,
+    metric_key: str,
+    metric_label: str,
     n_start: int = 3,
     num_narratives: int = 8
 ) -> None:
     """
-    Generate plot of mean NCS (with std error bars) vs N for all models.
+    Generate plot of a specific metric (with std error bars) vs N for all models.
     
     Args:
-        metrics: Dict structure {model: {N: {"mean": float, "std": float}}}
+        metrics: Dict structure {model: {N: {metric_key: {"mean": float, "std": float}}}}
         output_path: Path to save the plot
         dataset_name: Name of the dataset for title
+        metric_key: Key to extract from metrics (e.g., "ncs_alpha_0.6", "jaccard", "ranking")
+        metric_label: Label for y-axis (e.g., "NCS (α=0.6)", "Jaccard Similarity", "Ranking Similarity")
         n_start: Minimum N value (default 3)
         num_narratives: Maximum N value (default 8)
     """
@@ -1880,10 +1952,12 @@ def plot_number_narratives_metrics(
         valid_n = []
         
         for n in n_values:
-            if n in model_metrics and not np.isnan(model_metrics[n]["mean"]):
-                means.append(model_metrics[n]["mean"])
-                stds.append(model_metrics[n]["std"])
-                valid_n.append(n)
+            if n in model_metrics and metric_key in model_metrics[n]:
+                metric_data = model_metrics[n][metric_key]
+                if isinstance(metric_data, dict) and not np.isnan(metric_data.get("mean", np.nan)):
+                    means.append(metric_data["mean"])
+                    stds.append(metric_data["std"])
+                    valid_n.append(n)
         
         if valid_n:
             # Clean model name for display
@@ -1904,8 +1978,8 @@ def plot_number_narratives_metrics(
             )
     
     ax.set_xlabel("Number of Narratives (N)", fontsize=12)
-    ax.set_ylabel("Narrative Coherence Score (NCS)", fontsize=12)
-    ax.set_title(f"NCS vs Number of Narratives - {dataset_name}", fontsize=14, fontweight="bold")
+    ax.set_ylabel(metric_label, fontsize=12)
+    ax.set_title(f"{metric_label} vs Number of Narratives - {dataset_name}", fontsize=14, fontweight="bold")
     ax.set_xticks(n_values)
     ax.set_ylim(0, 1)
     ax.grid(True, linestyle="--", alpha=0.3)

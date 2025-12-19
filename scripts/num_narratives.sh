@@ -21,9 +21,18 @@ model_list=(
     "unsloth_qwen_3B"
 )
 
+DATASETS=(
+    "adult"
+    "titanic"
+    "california"
+    "diabetes"
+)
+
 # Iterate over each model and run num_narratives.py accordingly.
-for model in "${model_list[@]}"; do
-    echo "Running num_narratives.py with model '$model'..."
-    python num_narratives.py --dataset=adult --worker_model_name="$model"
+for dataset in "${DATASETS[@]}"; do
+    for model in "${model_list[@]}"; do
+        echo "Running num_narratives.py with model '$model' and dataset '$dataset'..."
+        python num_narratives.py --dataset="$dataset" --worker_model_name="$model"
+    done
 done
 
