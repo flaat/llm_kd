@@ -5,14 +5,14 @@ from src.number_narratives import assess_narratives
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run number-of-narratives similarity analysis"
+        description="Run number-of-narratives generation for coherence analysis"
     )
 
     parser.add_argument(
         '--worker_model_name',
         type=str,
-        default='qwen3_30B_A3B',
-        help='Model name to generate narratives (default: gemini_2.5_flash_lite)'
+        default='unsloth_qwen_0.5B',
+        help='Model name to generate narratives (default: unsloth_qwen_0.5B)'
     )
 
     parser.add_argument(
@@ -54,15 +54,22 @@ def parse_arguments() -> argparse.Namespace:
         '--dataset',
         type=str,
         default='adult',
-        choices=['adult','titanic'],
+        choices=['adult', 'titanic', 'california', 'diabetes'],
         help='Dataset to use for experiments (default: adult)'
+    )
+
+    parser.add_argument(
+        '--num_narratives',
+        type=int,
+        default=8,
+        help='Number of narratives (K) to generate per sample (default: 8)'
     )
 
     return parser.parse_args()
 
 
 def display_config(args: argparse.Namespace) -> None:
-    print("\n========== NUMBER OF NARRATIVES ANALYSIS ==========")
+    print("\n========== NUMBER OF NARRATIVES GENERATION ==========")
     print(f"Model name:          {args.worker_model_name}")
     print(f"Model context length:{args.max_model_len}")
     print("\n----- Generation Parameters -----")
@@ -72,6 +79,7 @@ def display_config(args: argparse.Namespace) -> None:
     print(f"Repetition penalty:  {args.repetition_penalty}")
     print("\n----- Settings -----")
     print(f"Dataset:             {args.dataset}")
+    print(f"Num narratives (K):  {args.num_narratives}")
     print("=============================================\n")
 
 
@@ -87,10 +95,9 @@ def main() -> None:
         max_tokens=args.max_tokens,
         repetition_penalty=args.repetition_penalty,
         max_model_len=args.max_model_len,
+        num_narratives=args.num_narratives,
     )
 
 
 if __name__ == "__main__":
     main()
-
-

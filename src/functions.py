@@ -1591,3 +1591,330 @@ def generate_global_fra_barplots(
     plt.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
+
+# ------------------------- Number Narratives NCS helpers -------------------------
+
+def compute_jaccard_similarity(dict1: Dict[str, int], dict2: Dict[str, int]) -> float:
+    """
+    Compute Jaccard similarity between two dictionaries based on their keys (feature names).
+    
+    J(A, B) = |A ∩ B| / |A ∪ B|
+    
+    Returns:
+        float: Jaccard similarity in [0, 1]. Two empty dicts have similarity 1.0.
+    """
+    set1 = set(dict1.keys()) if dict1 else set()
+    set2 = set(dict2.keys()) if dict2 else set()
+    # Handle empty dicts: two empty dicts have similarity 1.0, empty and non-empty have 0.0
+    if not set1 and not set2:
+        return 1.0
+    if not set1 or not set2:
+        return 0.0
+    intersection = len(set1 & set2)
+    union = len(set1 | set2)
+    return intersection / union if union > 0 else 0.0
+
+
+def compute_kendall_tau_normalized(dict1: Dict[str, int], dict2: Dict[str, int]) -> float:
+    """
+    Compute Kendall's tau between two rankings and normalize to [0, 1] as (tau + 1) / 2.
+    
+    Args:
+        dict1: First ranking {feature_name: rank}
+        dict2: Second ranking {feature_name: rank}
+    
+    Returns:
+        float: Normalized Kendall's tau in [0, 1], or 0.5 if computation fails.
+    """
+    if not dict1 or not dict2:
+        return 0.5  # Neutral value when computation not possible
+    
+    # Get common features (case-insensitive matching)
+    dict1_lower = {k.lower(): v for k, v in dict1.items()}
+    dict2_lower = {k.lower(): v for k, v in dict2.items()}
+    common_features = set(dict1_lower.keys()) & set(dict2_lower.keys())
+    
+    if len(common_features) < 2:
+        return 0.5  # Need at least 2 features for correlation
+    
+    # Build rank lists
+    ranks1 = []
+    ranks2 = []
+    for feat in sorted(common_features):
+        ranks1.append(dict1_lower[feat])
+        ranks2.append(dict2_lower[feat])
+    
+    if SCIPY_AVAILABLE:
+        try:
+            tau, _ = kendalltau(ranks1, ranks2)
+            if np.isnan(tau):
+                return 0.5
+            # Normalize to [0, 1]
+            return (tau + 1) / 2
+        except Exception:
+            return 0.5
+    else:
+        # Manual implementation
+        try:
+            n = len(ranks1)
+            concordant = 0
+            discordant = 0
+            
+            for i in range(n):
+                for j in range(i + 1, n):
+                    sign1 = np.sign(ranks1[i] - ranks1[j])
+                    sign2 = np.sign(ranks2[i] - ranks2[j])
+                    if sign1 * sign2 > 0:
+                        concordant += 1
+                    elif sign1 * sign2 < 0:
+                        discordant += 1
+            
+            total = concordant + discordant
+            if total == 0:
+                return 0.5
+            
+            tau = (concordant - discordant) / total
+            return (tau + 1) / 2
+        except Exception:
+            return 0.5
+
+
+def compute_pairwise_coherence_score(
+    dict1: Dict[str, int],
+    dict2: Dict[str, int],
+    alpha: float = 0.6
+) -> float:
+    """
+    Compute pairwise coherence score S(e_i, e_j) between two feature importance rankings.
+    
+    S(e_i, e_j) = J(e_i, e_j)^alpha * ((tau(e_i, e_j) + 1) / 2)^(1-alpha)
+    
+    Where:
+    - J: Jaccard similarity on feature names (keys)
+    - tau: Kendall's tau correlation, normalized to [0, 1]
+    
+    Args:
+        dict1: First ranking {feature_name: rank}
+        dict2: Second ranking {feature_name: rank}
+        alpha: Weight for Jaccard similarity (default 0.6)
+    
+    Returns:
+        float: Pairwise coherence score in [0, 1]
+    """
+    jaccard = compute_jaccard_similarity(dict1, dict2)
+    tau_normalized = compute_kendall_tau_normalized(dict1, dict2)
+    
+    # S = J^alpha * tau_norm^(1-alpha)
+    score = (jaccard ** alpha) * (tau_normalized ** (1 - alpha))
+    return score
+
+
+def compute_narrative_coherence_score(
+    rankings: List[Dict[str, int]],
+    alpha: float = 0.6
+) -> float:
+    """
+    Compute Narrative Coherence Score (NCS) for a set of feature importance rankings.
+    
+    NCS = (2 / N(N-1)) * sum_{i<j} S(e_i, e_j)
+    
+    Where S is the pairwise coherence score.
+    
+    Args:
+        rankings: List of ranking dictionaries {feature_name: rank}
+        alpha: Weight for Jaccard similarity in pairwise score (default 0.6)
+    
+    Returns:
+        float: NCS in [0, 1], or NaN if not enough rankings
+    """
+    n = len(rankings)
+    if n < 2:
+        return float("nan")
+    
+    # Compute sum of pairwise coherence scores
+    total_score = 0.0
+    num_pairs = 0
+    
+    for i in range(n):
+        for j in range(i + 1, n):
+            score = compute_pairwise_coherence_score(rankings[i], rankings[j], alpha)
+            total_score += score
+            num_pairs += 1
+    
+    # NCS = (2 / N(N-1)) * sum = sum / num_pairs
+    if num_pairs == 0:
+        return float("nan")
+    
+    ncs = total_score / num_pairs
+    return ncs
+
+
+def collect_number_narratives_metrics(
+    base_dir: Path,
+    datasets: List[str],
+    models: List[str],
+    num_narratives: int,
+    n_start: int = 3,
+    alpha: float = 0.6
+) -> Dict[str, Dict[str, Dict[int, Dict[str, float]]]]:
+    """
+    Collect NCS metrics for number-of-narratives analysis.
+    
+    For each sample, for each N in [n_start, K]:
+    - Enumerate ALL C(K, N) subsets of the K narratives
+    - Compute NCS for each subset
+    - Aggregate across all samples: mean and std per N per model
+    
+    Args:
+        base_dir: Base directory containing results (e.g., results/number_narratives)
+        datasets: List of dataset names to process
+        models: List of model names to process
+        num_narratives: K value (max narratives generated per sample)
+        n_start: Minimum N for subset sampling (default 3)
+        alpha: Alpha parameter for coherence score (default 0.6)
+    
+    Returns:
+        Dict structure: {dataset: {model: {N: {"mean": float, "std": float}}}}
+    """
+    from itertools import combinations
+    
+    results: Dict[str, Dict[str, Dict[int, Dict[str, float]]]] = {}
+    
+    for dataset in datasets:
+        results[dataset] = {}
+        
+        for model in models:
+            # Load JSON file for this model/dataset
+            json_path = base_dir / dataset / f"{model}.json"
+            
+            if not json_path.exists():
+                print(f"Warning: File not found: {json_path}")
+                continue
+            
+            try:
+                with json_path.open("r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception as e:
+                print(f"Warning: Could not load {json_path}: {e}")
+                continue
+            
+            # Collect NCS values per N across all samples
+            ncs_per_n: Dict[int, List[float]] = {n: [] for n in range(n_start, num_narratives + 1)}
+            
+            for sample_id, sample_data in data.items():
+                rankings = sample_data.get("features_importance_ranking", [])
+                
+                # Filter out empty rankings
+                valid_rankings = [r for r in rankings if r]
+                
+                if len(valid_rankings) < n_start:
+                    # Not enough valid rankings for this sample
+                    continue
+                
+                # For each N, enumerate all C(K, N) subsets and compute NCS
+                k = len(valid_rankings)
+                for n in range(n_start, min(num_narratives, k) + 1):
+                    # Get all combinations of size n
+                    for subset_indices in combinations(range(k), n):
+                        subset_rankings = [valid_rankings[i] for i in subset_indices]
+                        ncs = compute_narrative_coherence_score(subset_rankings, alpha)
+                        if not np.isnan(ncs):
+                            ncs_per_n[n].append(ncs)
+            
+            # Compute mean and std for each N
+            model_results: Dict[int, Dict[str, float]] = {}
+            for n in range(n_start, num_narratives + 1):
+                values = ncs_per_n[n]
+                if values:
+                    model_results[n] = {
+                        "mean": float(np.mean(values)),
+                        "std": float(np.std(values)),
+                        "count": len(values),
+                    }
+                else:
+                    model_results[n] = {
+                        "mean": float("nan"),
+                        "std": float("nan"),
+                        "count": 0,
+                    }
+            
+            results[dataset][model] = model_results
+    
+    return results
+
+
+def plot_number_narratives_metrics(
+    metrics: Dict[str, Dict[int, Dict[str, float]]],
+    output_path: Path,
+    dataset_name: str,
+    n_start: int = 3,
+    num_narratives: int = 8
+) -> None:
+    """
+    Generate plot of mean NCS (with std error bars) vs N for all models.
+    
+    Args:
+        metrics: Dict structure {model: {N: {"mean": float, "std": float}}}
+        output_path: Path to save the plot
+        dataset_name: Name of the dataset for title
+        n_start: Minimum N value (default 3)
+        num_narratives: Maximum N value (default 8)
+    """
+    import matplotlib.pyplot as plt
+    
+    if not metrics:
+        print(f"Warning: No metrics to plot for {dataset_name}")
+        return
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    # X-axis values
+    n_values = list(range(n_start, num_narratives + 1))
+    
+    # Color palette
+    colors = plt.cm.tab10(np.linspace(0, 1, len(metrics)))
+    
+    for idx, (model_name, model_metrics) in enumerate(sorted(metrics.items())):
+        means = []
+        stds = []
+        valid_n = []
+        
+        for n in n_values:
+            if n in model_metrics and not np.isnan(model_metrics[n]["mean"]):
+                means.append(model_metrics[n]["mean"])
+                stds.append(model_metrics[n]["std"])
+                valid_n.append(n)
+        
+        if valid_n:
+            # Clean model name for display
+            display_name = model_name
+            if display_name.startswith("unsloth_"):
+                display_name = display_name[len("unsloth_"):]
+            
+            ax.errorbar(
+                valid_n,
+                means,
+                yerr=stds,
+                marker='o',
+                capsize=4,
+                color=colors[idx],
+                label=display_name,
+                linewidth=2,
+                markersize=6
+            )
+    
+    ax.set_xlabel("Number of Narratives (N)", fontsize=12)
+    ax.set_ylabel("Narrative Coherence Score (NCS)", fontsize=12)
+    ax.set_title(f"NCS vs Number of Narratives - {dataset_name}", fontsize=14, fontweight="bold")
+    ax.set_xticks(n_values)
+    ax.set_ylim(0, 1)
+    ax.grid(True, linestyle="--", alpha=0.3)
+    ax.legend(loc="best", fontsize=10)
+    
+    plt.tight_layout()
+    
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Plot saved to: {output_path}")
+
