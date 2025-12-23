@@ -23,6 +23,9 @@ from src.functions import (  # type: ignore  # noqa
 	collect_global_results,
 	generate_global_latex_table,
 	generate_global_barplots,
+	collect_global_feasibility_results,
+	generate_global_feasibility_latex_table,
+	generate_global_feasibility_barplots,
 	generate_global_fra_latex_table,
 	generate_global_fra_barplots,
 	collect_number_narratives_metrics,
@@ -212,6 +215,32 @@ def main():
 		generate_global_barplots(results, args.dataset_name, args.refiner, png_path)
 		print(f"Barplots saved to: {png_path}")
 
+		# Generate feasibility LaTeX table and barplots (mean/std)
+		try:
+			feasibility_results = collect_global_feasibility_results(args.dataset_name, args.refiner)
+		except ValueError as e:
+			print(f"Warning: {e}")
+			feasibility_results = {}
+		
+		if feasibility_results:
+			feas_tex_filename = f"{args.dataset_name}_{suffix}_feasibility.tex"
+			feas_tex_path = output_dir / feas_tex_filename
+			feasibility_latex = generate_global_feasibility_latex_table(
+				feasibility_results, args.dataset_name, args.refiner
+			)
+			with feas_tex_path.open("w") as f:
+				f.write(feasibility_latex)
+			print(f"Feasibility LaTeX table saved to: {feas_tex_path}")
+			
+			feas_png_filename = f"{args.dataset_name}_{suffix}_feasibility.png"
+			feas_png_path = output_dir / feas_png_filename
+			generate_global_feasibility_barplots(
+				feasibility_results, args.dataset_name, args.refiner, feas_png_path
+			)
+			print(f"Feasibility barplots saved to: {feas_png_path}")
+		else:
+			print(f"Warning: No feasibility results found for dataset '{args.dataset_name}'.")
+		
 		# Generate FRA-only LaTeX table
 		fra_latex_table = generate_global_fra_latex_table(results, args.dataset_name, args.refiner)
 		fra_tex_filename = f"{args.dataset_name}_{suffix}_fra.tex"

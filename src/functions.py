@@ -1312,6 +1312,102 @@ def _get_metric_pair(plain_data: Dict[str, Any], ft_data: Dict[str, Any], metric
         return f"{plain_str} / {ft_str}"
 
 
+def _extract_feasibility_stats(data: Dict[str, Any]) -> Dict[str, Any]:
+	"""Pull mean/std values from feasibility stats blocks."""
+	def _pair(section: str) -> Tuple[Optional[float], Optional[float]]:
+		stats = data.get(section, {})
+		if isinstance(stats, dict):
+			return stats.get("mean"), stats.get("std")
+		return None, None
+	
+	inference_mean, inference_std = _pair("inference_time_stats")
+	energy_mean, energy_std = _pair("energy_consumption_stats")
+	power_mean, power_std = _pair("average_power_stats")
+	
+	return {
+		"inference_time_mean": inference_mean,
+		"inference_time_std": inference_std,
+		"energy_consumption_mean": energy_mean,
+		"energy_consumption_std": energy_std,
+		"average_power_mean": power_mean,
+		"average_power_std": power_std,
+	}
+
+
+def collect_global_feasibility_results(dataset_name: str, refiner: bool) -> Dict[str, Dict[str, Any]]:
+	"""
+	Scan model directories and collect feasibility stats (mean/std) for plain vs fine-tuned runs.
+	Returns: {model_name: {"plain": {...}, "ft": {...}}}
+	"""
+	base_dir = build_output_dir(refiner=refiner)
+	dataset_dir = base_dir / dataset_name
+	
+	if not dataset_dir.exists():
+		raise ValueError(f"Dataset directory not found: {dataset_dir}")
+	
+	results: Dict[str, Dict[str, Any]] = {}
+	for model_dir in sorted(dataset_dir.iterdir()):
+		if not model_dir.is_dir():
+			continue
+		
+		model_name = model_dir.name
+		feas_dir = model_dir / "feasibility"
+		if not feas_dir.exists():
+			continue
+		
+		plain_file = feas_dir / f"{model_name}_feasibility_response_finetuned_False.json"
+		ft_file = feas_dir / f"{model_name}_feasibility_response_finetuned_True.json"
+		
+		plain_stats = None
+		ft_stats = None
+		
+		if plain_file.exists():
+			try:
+				plain_stats = _extract_feasibility_stats(load_json(plain_file))
+			except Exception as e:
+				print(f"Warning: Could not load feasibility file {plain_file}: {e}")
+		if ft_file.exists():
+			try:
+				ft_stats = _extract_feasibility_stats(load_json(ft_file))
+			except Exception as e:
+				print(f"Warning: Could not load feasibility file {ft_file}: {e}")
+		
+		if plain_stats is not None or ft_stats is not None:
+			results[model_name] = {"plain": plain_stats, "ft": ft_stats}
+	
+	return results
+
+
+def _format_mean_std(mean: Any, std: Any) -> str:
+	"""Format mean±std string, handling None."""
+	if mean is None:
+		return "n.d."
+	mean_val = f"{float(mean):.3f}" if isinstance(mean, (int, float)) else str(mean)
+	if std is None:
+		return mean_val
+	std_val = f"{float(std):.3f}" if isinstance(std, (int, float)) else str(std)
+	return f"{mean_val} ± {std_val}"
+
+
+def _get_mean_std_pair(plain_data: Dict[str, Any], ft_data: Dict[str, Any], base_key: str) -> str:
+	"""Format plain/ft pair for mean/std metrics."""
+	plain_mean = plain_data.get(f"{base_key}_mean") if plain_data else None
+	plain_std = plain_data.get(f"{base_key}_std") if plain_data else None
+	ft_mean = ft_data.get(f"{base_key}_mean") if ft_data else None
+	ft_std = ft_data.get(f"{base_key}_std") if ft_data else None
+	
+	plain_str = _format_mean_std(plain_mean, plain_std)
+	ft_str = _format_mean_std(ft_mean, ft_std)
+	
+	if plain_str == "n.d." and ft_str == "n.d.":
+		return "n.d."
+	if plain_str == "n.d.":
+		return ft_str
+	if ft_str == "n.d.":
+		return plain_str
+	return f"{plain_str} / {ft_str}"
+
+
 def generate_global_latex_table(results: Dict[str, Dict[str, Any]], dataset_name: str, refiner: bool) -> str:
     """Generate LaTeX table with plain/finetuned values in same column separated by '/' (no FRA column)."""
     header = (
@@ -1438,6 +1534,140 @@ def generate_global_barplots(results: Dict[str, Dict[str, Any]], dataset_name: s
     output_path.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
+
+
+def generate_global_feasibility_latex_table(results: Dict[str, Dict[str, Any]], dataset_name: str, refiner: bool) -> str:
+	"""Generate LaTeX table for feasibility metrics (mean±std) showing plain/ft pairs."""
+	header = (
+		"\\begin{table*}[htbp]\n"
+		"    \\centering\n"
+		"    \\begin{tabular}{l|p{3cm}|p{3cm}|p{3cm}}\n"
+		"        \\textbf{Model} & \\textbf{Inference Time (s)} \\\\ (Plain / FT) & "
+		"\\textbf{Energy (J)} \\\\ (Plain / FT) & "
+		"\\textbf{Avg. Power (W)} \\\\ (Plain / FT) \\\\ \n"
+		"        \\midrule \n"
+	)
+	
+	body_lines: List[str] = []
+	for model_name in sorted(results.keys()):
+		model_data = results[model_name]
+		plain_data = model_data.get("plain")
+		ft_data = model_data.get("ft")
+		
+		clean_name = _clean_model_name(model_name)
+		
+		inference_pair = _get_mean_std_pair(plain_data, ft_data, "inference_time")
+		energy_pair = _get_mean_std_pair(plain_data, ft_data, "energy_consumption")
+		power_pair = _get_mean_std_pair(plain_data, ft_data, "average_power")
+		
+		row = " & ".join([clean_name, inference_pair, energy_pair, power_pair]) + " \\\\"
+		body_lines.append(row)
+	
+	mode_str = "worker+refiner" if refiner else "worker only"
+	label_suffix = "-refiner-feas" if refiner else "-draft-feas"
+	footer = (
+		"    \\end{tabular} \n"
+		"    \\caption{Feasibility metrics (mean $\\pm$ std) for " + mode_str + " on " + dataset_name + " dataset.}\n"
+		"    \\label{tab:feasibility-results-" + dataset_name + label_suffix + "}\n"
+		" \\end{table*}"
+	)
+	
+	return header + "\n".join(body_lines) + "\n" + footer
+
+
+def generate_global_feasibility_barplots(
+	results: Dict[str, Dict[str, Any]],
+	dataset_name: str,
+	refiner: bool,
+	output_path: Path,
+) -> None:
+	"""Generate barplots for feasibility metrics with error bars showing std."""
+	import matplotlib.pyplot as plt
+	import numpy as np
+	
+	models = sorted(results.keys())
+	if not models:
+		return
+	
+	clean_model_names = [_clean_model_name(m) for m in models]
+	metrics = [
+		("inference_time", "Inference Time (s)"),
+		("energy_consumption", "Energy (J)"),
+		("average_power", "Average Power (W)"),
+	]
+	
+	fig, axes = plt.subplots(1, 3, figsize=(16, 5))
+	colors = plt.cm.tab10(np.linspace(0, 1, len(models)))
+	x = np.arange(len(models))
+	width = 0.35
+	
+	for idx, (metric_key, metric_label) in enumerate(metrics):
+		ax = axes[idx]
+		
+		plain_means: List[float] = []
+		ft_means: List[float] = []
+		plain_stds: List[float] = []
+		ft_stds: List[float] = []
+		
+		for model_name in models:
+			model_data = results[model_name]
+			plain_data = model_data.get("plain") or {}
+			ft_data = model_data.get("ft") or {}
+			
+			plain_mean = plain_data.get(f"{metric_key}_mean")
+			plain_std = plain_data.get(f"{metric_key}_std")
+			ft_mean = ft_data.get(f"{metric_key}_mean")
+			ft_std = ft_data.get(f"{metric_key}_std")
+			
+			plain_means.append(float(plain_mean) if plain_mean is not None else 0.0)
+			ft_means.append(float(ft_mean) if ft_mean is not None else 0.0)
+			plain_stds.append(float(plain_std) if plain_std is not None else 0.0)
+			ft_stds.append(float(ft_std) if ft_std is not None else 0.0)
+		
+		ax.bar(
+			x - width / 2,
+			plain_means,
+			width,
+			color=colors,
+			alpha=0.85,
+			yerr=plain_stds,
+			capsize=4,
+			label="Plain" if idx == 0 else "",
+		)
+		ax.bar(
+			x + width / 2,
+			ft_means,
+			width,
+			color=colors,
+			alpha=0.85,
+			hatch="///",
+			edgecolor="black",
+			linewidth=0.5,
+			yerr=ft_stds,
+			capsize=4,
+			label="Fine-Tuned" if idx == 0 else "",
+		)
+		
+		ax.set_xlabel("Model", fontsize=10)
+		ax.set_ylabel(metric_label, fontsize=10)
+		ax.set_title(metric_label, fontsize=11, fontweight="bold")
+		ax.set_xticks(x)
+		ax.set_xticklabels(clean_model_names, rotation=45, ha="right", fontsize=9)
+		max_val = max(max(plain_means, default=0.0), max(ft_means, default=0.0))
+		ax.set_ylim(0, max_val * 1.1 if max_val > 0 else 1.0)
+		ax.grid(True, linestyle="--", alpha=0.3, axis="y")
+	
+	axes[0].legend(loc="upper left", fontsize=8, ncol=2)
+	plt.suptitle(
+		f"{dataset_name} - {'Worker+Refiner' if refiner else 'Worker Only'} Feasibility Metrics",
+		fontsize=14,
+		fontweight="bold",
+	)
+	plt.tight_layout()
+	
+	output_path.parent.mkdir(parents=True, exist_ok=True)
+	plt.savefig(output_path, dpi=300, bbox_inches="tight")
+	plt.close(fig)
 
 
 def generate_global_fra_latex_table(results: Dict[str, Dict[str, Any]], dataset_name: str, refiner: bool) -> str:
