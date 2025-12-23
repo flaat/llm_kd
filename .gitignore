@@ -11,6 +11,5 @@ outputs_unsloth
 old/ 
 .env
 
-global_results/
 clf_models/
 outputs_unsloth_diabetes_worker/

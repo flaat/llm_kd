@@ -1,0 +1,17 @@
+\begin{table*}[htbp]
+    \centering
+    \begin{tabular}{l|p{2.8cm}|p{2.8cm}|p{2.8cm}|p{2.8cm}}
+        \textbf{Model} & \textbf{FRA SHAP 0.05} \\ (Plain / FT) & \textbf{FRA SHAP 0.1} \\ (Plain / FT) & \textbf{FRA SHAP 0.2} \\ (Plain / FT) & \textbf{FRA LIME 0.05} \\ (Plain / FT) & \textbf{FRA LIME 0.1} \\ (Plain / FT) & \textbf{FRA LIME 0.2} \\ (Plain / FT) \\ 
+\textbf{FRA LIME 0.1} \\ (Plain / FT) \\ 
+        \midrule 
+deepseek_r1_qwen_1.5B & 1.0 / 0.5208 & 1.0 / 0.5208 & 0.5208 & 1.0 / 0.9381 & 1.0 / 0.9381 & 0.9381 \\
+llama_1B-Instruct & 0.4737 & 0.4737 & 0.4737 & 0.9474 & 0.9474 & 0.9474 \\
+llama_3B-Instruct & 0.4896 & 0.4896 & 0.4896 & 0.9072 & 0.9072 & 0.9175 \\
+qwen3_0.6B & 0.4933 & 0.4933 & 0.4933 & 0.9474 & 0.9605 & 0.9605 \\
+qwen3_1.7B & 1.0 / 0.5263 & 1.0 / 0.5263 & 0.5263 & 1.0 / 0.9579 & 1.0 / 0.9579 & 0.9579 \\
+qwen_0.5B & 0.5 & 0.5 & 0.5 & 0.9872 & 0.9872 & 0.9744 \\
+qwen_3B & 0.4737 & 0.4737 & 0.4737 & 0.9375 & 0.9375 & 0.9375 \\
+    \end{tabular} 
+    \caption{FRA metrics for worker only on titanic dataset.}
+    \label{tab:fra-results-titanic-draft-fra}
+ \end{table*}

@@ -1,0 +1,17 @@
+\begin{table*}[htbp]
+    \centering
+    \begin{tabular}{l|p{2.8cm}|p{2.8cm}|p{2.8cm}|p{2.8cm}}
+        \textbf{Model} & \textbf{FRA SHAP 0.05} \\ (Plain / FT) & \textbf{FRA SHAP 0.1} \\ (Plain / FT) & \textbf{FRA SHAP 0.2} \\ (Plain / FT) & \textbf{FRA LIME 0.05} \\ (Plain / FT) & \textbf{FRA LIME 0.1} \\ (Plain / FT) & \textbf{FRA LIME 0.2} \\ (Plain / FT) \\ 
+\textbf{FRA LIME 0.1} \\ (Plain / FT) \\ 
+        \midrule 
+deepseek_r1_qwen_1.5B & 0.434 & 0.434 & 0.434 & 0.7377 & 0.7213 & 0.7377 \\
+llama_1B-Instruct & 1.0 & 1.0 & 1.0 & 1.0 & 1.0 & 1.0 \\
+llama_3B-Instruct & 0.6512 & 0.6512 & 0.6512 & 0.7959 & 0.7959 & 0.7959 \\
+qwen3_0.6B & 0.65 & 0.65 & 0.65 & 0.5 & 0.5 & 0.5455 \\
+qwen3_1.7B & 0.4419 & 0.4419 & 0.4419 & 0.76 & 0.76 & 0.72 \\
+qwen_0.5B & 0.5417 & 0.5417 & 0.5417 & 0.7143 & 0.75 & 0.7143 \\
+qwen_3B & 1.0 / 0.6383 & 1.0 / 0.6383 & 1.0 / 0.6383 & 1.0 / 0.7843 & 1.0 / 0.7843 & 1.0 / 0.7843 \\
+    \end{tabular} 
+    \caption{FRA metrics for worker only on diabetes dataset.}
+    \label{tab:fra-results-diabetes-draft-fra}
+ \end{table*}
