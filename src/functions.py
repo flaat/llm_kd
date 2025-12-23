@@ -1285,6 +1285,82 @@ def _clean_model_name(model_name: str) -> str:
     return model_name
 
 
+def _clean_model_label(model_name: str) -> str:
+	"""Remove unsloth_ prefix for plotting labels."""
+	if model_name.startswith("unsloth_"):
+		return model_name[len("unsloth_"):]
+	return model_name
+
+
+def _parse_tex_value_pair(cell: str) -> Optional[float]:
+	"""Extract the fine-tuned numeric value from a 'plain / ft' LaTeX cell."""
+	if not cell:
+		return None
+	parts = cell.split("/")
+	if len(parts) < 2:
+		return None
+	ft_part = parts[-1]
+	# Strip LaTeX row ending and whitespace
+	ft_part = ft_part.replace("\\\\", "").strip()
+	# If the part contains ±, take the mean before ±
+	if "±" in ft_part:
+		ft_part = ft_part.split("±")[0].strip()
+	try:
+		return float(ft_part)
+	except ValueError:
+		try:
+			# Sometimes numbers may carry commas
+			return float(ft_part.replace(",", ""))
+		except Exception:
+			return None
+
+
+def _parse_global_results_tex(tex_path: Path) -> Dict[str, Dict[str, float]]:
+	"""Parse global_results LaTeX table to pull FT PFF and JPR per model."""
+	if not tex_path.exists():
+		return {}
+
+	results: Dict[str, Dict[str, float]] = {}
+	with tex_path.open("r") as f:
+		for line in f:
+			# Expect rows like: model & avgff & pff & tf & jpr \\
+			if "&" not in line or "\\midrule" in line or "textbf" in line:
+				continue
+			cells = [c.strip() for c in line.split("&")]
+			if len(cells) < 5:
+				continue
+			model = cells[0]
+			pff_cell = cells[2]
+			jpr_cell = cells[4]
+			pff_ft = _parse_tex_value_pair(pff_cell)
+			jpr_ft = _parse_tex_value_pair(jpr_cell)
+			results[model] = {
+				"perfect_ff": pff_ft if pff_ft is not None else None,
+				"parsing_rate": jpr_ft if jpr_ft is not None else None,
+			}
+	return results
+
+
+def _parse_global_feasibility_tex(tex_path: Path) -> Dict[str, Dict[str, float]]:
+	"""Parse feasibility LaTeX table to pull FT inference time mean per model."""
+	if not tex_path.exists():
+		return {}
+
+	results: Dict[str, Dict[str, float]] = {}
+	with tex_path.open("r") as f:
+		for line in f:
+			if "&" not in line or "\\midrule" in line or "textbf" in line:
+				continue
+			cells = [c.strip() for c in line.split("&")]
+			if len(cells) < 2:
+				continue
+			model = cells[0]
+			inference_cell = cells[1]
+			inference_ft = _parse_tex_value_pair(inference_cell)
+			results[model] = {"inference_time": inference_ft if inference_ft is not None else None}
+	return results
+
+
 def _format_metric_value(value: Any) -> str:
     """Format metric value for display, handling None and numeric values."""
     if value is None:
@@ -1376,6 +1452,89 @@ def collect_global_feasibility_results(dataset_name: str, refiner: bool) -> Dict
 			results[model_name] = {"plain": plain_stats, "ft": ft_stats}
 	
 	return results
+
+
+def collect_overall_metrics(datasets: List[str], refiner: bool) -> Dict[str, Dict[str, float]]:
+	"""
+	Aggregate fine-tuned metrics across datasets.
+	Returns: {model: {"parsing_rate": avg, "perfect_ff": avg, "inference_time": avg}}
+	"""
+	aggregates: Dict[str, Dict[str, List[float]]] = {}
+
+	def _append(model: str, key: str, value: Any) -> None:
+		if value is None:
+			return
+		aggregates.setdefault(model, {}).setdefault(key, []).append(float(value))
+
+	for dataset in datasets:
+		base_dir = build_output_dir(refiner=refiner) / "global_results"
+		suffix = "with_refiner" if refiner else "draft_generator"
+		main_tex = base_dir / f"{dataset}_{suffix}.tex"
+		feas_tex = base_dir / f"{dataset}_{suffix}_feasibility.tex"
+
+		main_results = _parse_global_results_tex(main_tex)
+		feas_results = _parse_global_feasibility_tex(feas_tex)
+
+		if not main_results and not feas_results:
+			print(f"Warning: No global_results tables found for dataset '{dataset}'")
+			continue
+
+		for model_name, vals in main_results.items():
+			_append(model_name, "perfect_ff", vals.get("perfect_ff"))
+			_append(model_name, "parsing_rate", vals.get("parsing_rate"))
+
+		for model_name, vals in feas_results.items():
+			_append(model_name, "inference_time", vals.get("inference_time"))
+
+	overall: Dict[str, Dict[str, float]] = {}
+	for model_name, metric_lists in aggregates.items():
+		averaged: Dict[str, float] = {}
+		for metric_key, values in metric_lists.items():
+			if values:
+				averaged[metric_key] = sum(values) / len(values)
+		if averaged:
+			overall[model_name] = averaged
+
+	return overall
+
+
+def plot_overall_metrics(overall_metrics: Dict[str, Dict[str, float]], datasets: List[str], refiner: bool, output_path: Path) -> None:
+	import matplotlib.pyplot as plt
+	import numpy as np
+
+	models = sorted(overall_metrics.keys())
+	if not models:
+		print("Warning: No overall metrics to plot.")
+		return
+
+	clean_model_names = [_clean_model_label(m) for m in models]
+	metrics = [
+		("parsing_rate", "JPR"),
+		("perfect_ff", "PFF"),
+		("inference_time", "Inference Time (s)"),
+	]
+
+	fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+	colors = plt.cm.tab10(np.linspace(0, 1, len(models)))
+	x = np.arange(len(models))
+
+	for idx, (metric_key, metric_label) in enumerate(metrics):
+		ax = axes[idx]
+		values = [float(overall_metrics[m].get(metric_key, 0.0)) for m in models]
+		ax.bar(x, values, color=colors, alpha=0.85)
+		ax.set_title(metric_label, fontsize=11, fontweight="bold")
+		ax.set_xticks(x)
+		ax.set_xticklabels(clean_model_names, rotation=45, ha="right", fontsize=9)
+		ax.grid(True, linestyle="--", alpha=0.3, axis="y")
+		ax.set_ylabel(metric_label, fontsize=10)
+
+	mode_str = "Worker+Refiner" if refiner else "Worker Only"
+	plt.suptitle(f"Overall ({', '.join(datasets)}) - {mode_str}", fontsize=14, fontweight="bold")
+	plt.tight_layout()
+
+	output_path.parent.mkdir(parents=True, exist_ok=True)
+	plt.savefig(output_path, dpi=300, bbox_inches="tight")
+	plt.close(fig)
 
 
 def _format_mean_std(mean: Any, std: Any) -> str:
