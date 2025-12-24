@@ -78,6 +78,7 @@ CHECKPOINT_MAPPING = {
             "unsloth_qwen3_1.7B": 500,
             "unsloth_llama_3B-Instruct": 500,
             "unsloth_qwen_3B": 500,
+            "unsloth_qwen3_4B": 500,
         },
         "refiner": {
             "unsloth_qwen_0.5B": 800,
@@ -92,6 +93,7 @@ CHECKPOINT_MAPPING = {
             "unsloth_qwen3_1.7B": 550,
             "unsloth_llama_3B-Instruct": 100,
             "unsloth_qwen_3B": 300,
+            "unsloth_qwen3_4B": 50,
         },
         "refiner": {
             "unsloth_qwen_0.5B": 800,
@@ -106,6 +108,7 @@ CHECKPOINT_MAPPING = {
             "unsloth_qwen3_1.7B": 550,
             "unsloth_llama_3B-Instruct": 500,
             "unsloth_qwen_3B": 600,
+            "unsloth_qwen3_4B": 400,
         },
         "refiner": {
             "unsloth_qwen_0.5B": 800,
@@ -120,6 +123,7 @@ CHECKPOINT_MAPPING = {
             "unsloth_qwen3_1.7B": 600,
             "unsloth_llama_3B-Instruct": 600,
             "unsloth_qwen_3B": 600,
+            "unsloth_qwen3_4B": 600,
         },
         "refiner": {
             "unsloth_qwen_0.5B": 800,
