@@ -1,6 +1,5 @@
 import argparse
-from src.build_dataset_refiner import build_dataset_ref
-from src.build_dataset_worker import build_dataset_wor
+from src.build_dataset import build_dataset_ref, build_dataset_wor
 
 def parse_arguments() -> argparse.Namespace:
     """
@@ -17,8 +16,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         '--worker_model_name',
         type=str,
-        default='qwen3_30B_A3B',
-        help='Worker model name to generate draft narratives (default: qwen3_30B_A3B)'
+        default='unsloth_qwen3_1.7B',
+        help='Worker model name to generate draft narratives (default: unsloth_qwen3_1.7B for with-refiner pipeline, else qwen3_30B_A3B)'
     )
     
     parser.add_argument(
@@ -29,7 +28,7 @@ def parse_arguments() -> argparse.Namespace:
     )
     
     parser.add_argument(
-        '--max_model_len',
+        '--max_model_len',  
         type=int,
         default=8192,
         help='Maximum context length for the model (default: 8192)'
@@ -53,7 +52,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         '--max_tokens',
         type=int,
-        default=4096,
+        default=5000,
         help='Maximum number of tokens to generate (default: 4096)'
     )
     
@@ -76,7 +75,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         '--number_narratives',
         type=int,
-        default=10,
+        default=5,
         help='Number of narratives to generate (default: 10)'
     )
 
@@ -84,6 +83,19 @@ def parse_arguments() -> argparse.Namespace:
         '--only_worker',
         action='store_true',
         help='Whether to only run the worker model (default: False)'
+    )
+
+    parser.add_argument(
+        '--fine_tuned',
+        action='store_true',
+        help='Use LoRA fine-tuned worker model (default: False)'
+    )
+
+    parser.add_argument(
+        '--lora_checkpoint_path',
+        type=str,
+        default=None,   
+        help='Path to LoRA checkpoint when using --fine_tuned (default: None)'
     )
 
     return parser.parse_args()
@@ -133,7 +145,9 @@ def main() -> None:
             dataset=args.dataset,
             max_tokens=args.max_tokens,
             repetition_penalty=args.repetition_penalty,
-            max_model_len=args.max_model_len
+            max_model_len=args.max_model_len,
+            fine_tuned=args.fine_tuned,
+            lora_checkpoint_path=args.lora_checkpoint_path,
         )
     else:
         # Run the dataset building and refinement process
@@ -146,7 +160,9 @@ def main() -> None:
             max_tokens=args.max_tokens,
             repetition_penalty=args.repetition_penalty,
             max_model_len=args.max_model_len,
-            number_narratives=args.number_narratives
+            number_narratives=args.number_narratives,
+            fine_tuned=args.fine_tuned,
+            lora_checkpoint_path=args.lora_checkpoint_path,
         )
     
 

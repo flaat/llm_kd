@@ -30,6 +30,8 @@ from src.functions import (  # type: ignore  # noqa
 	generate_global_fra_barplots,
 	collect_number_narratives_metrics,
 	plot_number_narratives_metrics,
+	collect_overall_metrics,
+	plot_overall_metrics,
 )
 
 
@@ -39,8 +41,9 @@ def parse_args():
 	parser = argparse.ArgumentParser(description="Generate results (global) or validation metrics.")
 	parser.add_argument("--validation", action="store_true", help="Run validation mode on results/fine-tuning/worker_validation.")
 	parser.add_argument("--global", action="store_true", dest="global_mode", help="Generate global results by scanning all model directories.")
+	parser.add_argument("--overall", action="store_true", help="Average global metrics across multiple datasets.")
 	parser.add_argument("--number-narratives", action="store_true", dest="number_narratives", help="Run number-of-narratives NCS analysis.")
-	parser.add_argument("--datasets", nargs="+", default=["adult"], help="Datasets to include for validation.")
+	parser.add_argument("--datasets", nargs="+", default=["adult", "titanic", "california", "diabetes"], help="Datasets to include for validation.")
 	parser.add_argument("--models", nargs="+", default=[
 		"unsloth_qwen_0.5B",
 		"unsloth_qwen3_0.6B",
@@ -186,6 +189,19 @@ def main():
 
 	# Global mode (scan all models)
 	if args.global_mode:
+		if args.overall:
+			if not args.datasets:
+				raise SystemExit("Provide --datasets for overall mode.")
+			overall = collect_overall_metrics(args.datasets, args.refiner)
+			if not overall:
+				raise SystemExit("No metrics found for the requested datasets.")
+
+			output_dir = build_output_dir(args.refiner) / "global_results"
+			output_path = output_dir / "overall.png"
+			plot_overall_metrics(overall, args.datasets, args.refiner, output_path)
+			print(f"Overall plot saved to: {output_path}")
+			return
+
 		if not args.dataset_name:
 			raise SystemExit("Provide --dataset-name for global mode.")
 		
