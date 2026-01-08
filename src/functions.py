@@ -262,13 +262,13 @@ def compute_entry_metrics(entry: Dict, parsed: Optional[Dict]) -> Tuple[bool, Op
         if not _is_target_variable(var_name):
             parsed_feature_changes[var_name] = var_data
 
-    # Compare lengths (excluding target variables)
-    if len(parsed_feature_changes) != len(feature_changes_gt):
-        return True, None, None, None
-
     features_counter = 0
     denom = len(feature_changes_gt)
     target_correct = False
+    
+    # If number of features doesn't match, perfect_match will be False
+    # but we still compute avg_ff based on partial matches
+    length_matches = len(parsed_feature_changes) == len(feature_changes_gt)
 
     # Check target variable correctness
     if target_var_gt is not None:
@@ -318,7 +318,8 @@ def compute_entry_metrics(entry: Dict, parsed: Optional[Dict]) -> Tuple[bool, Op
             pass
 
     avg_ff = features_counter / denom if denom else None
-    is_perfect = features_counter == denom if denom else None
+    # Perfect match only if all features match AND the number of features is correct
+    is_perfect = (features_counter == denom and length_matches) if denom else None
 
     return True, is_perfect, avg_ff, target_correct
 
@@ -330,7 +331,7 @@ def compute_metrics_for_dataset(data: Dict, max_examples: int = 200, dataset_nam
     perfect_ff = 0
     avg_ff_values: List[float] = []
     target_correct_total = 0
-    comparable_total = 0
+    comparable_total = 0  # Number of entries where feature comparison is possible (both avg_ff and perfect_match not None)
     
     # FRA metrics collection
     fra_shap_0_05_values: List[float] = []
@@ -351,14 +352,15 @@ def compute_metrics_for_dataset(data: Dict, max_examples: int = 200, dataset_nam
 
         if parsed_ok:
             parsed_success += 1
-        if perfect_match is not None:
+        
+        # Only count entries where both perfect_match and avg_ff are not None (they should be consistent)
+        if perfect_match is not None and avg_ff is not None:
             comparable_total += 1
+            avg_ff_values.append(avg_ff)
             if perfect_match:
                 perfect_ff += 1
-        if avg_ff is not None:
-            avg_ff_values.append(avg_ff)
-        if target_correct is True:
-            target_correct_total += 1
+            if target_correct is True:
+                target_correct_total += 1
         
         # Compute FRA metrics if conditions are met
         if dataset_name and perfect_match is True and parsed is not None:
@@ -594,6 +596,9 @@ def plot_metrics(rows: List[Dict], out_path: Path):
 
 # ------------------------- FRA metric helpers -------------------------
 
+# Cache for loaded models and datasets to avoid reloading for each entry
+_MODEL_CACHE: Dict[str, Tuple[Any, Any]] = {}
+
 def _normalize_dataset_name(dataset_name: str) -> str:
     """Normalize dataset name to match pickle file naming convention."""
     # Map common variations to file names
@@ -616,16 +621,21 @@ def _load_classifier_model(dataset_name: str) -> Tuple[Any, Any]:
     """
     Load the pickle model and Dataset class for encoding.
     Returns (model, dataset_instance) or (None, None) if loading fails.
+    Uses caching to avoid reloading for each entry.
     """
     if not DATASET_CLASS_AVAILABLE:
         return None, None
     
+    # Check cache first
+    normalized_name = _normalize_dataset_name(dataset_name)
+    if normalized_name in _MODEL_CACHE:
+        return _MODEL_CACHE[normalized_name]
+    
     try:
-        # Normalize dataset name
-        normalized_name = _normalize_dataset_name(dataset_name)
         model_path = Path("src/explainer/clf_models") / f"{normalized_name}.pkl"
         
         if not model_path.exists():
+            _MODEL_CACHE[normalized_name] = (None, None)
             return None, None
         
         # Load model
@@ -644,8 +654,12 @@ def _load_classifier_model(dataset_name: str) -> Tuple[Any, Any]:
         
         dataset_instance = DatasetClass(name=dataset_class_name)
         
+        # Cache the result
+        _MODEL_CACHE[normalized_name] = (model, dataset_instance)
+        
         return model, dataset_instance
     except Exception:
+        _MODEL_CACHE[normalized_name] = (None, None)
         return None, None
 
 
@@ -668,12 +682,24 @@ def _convert_instance_to_model_input(instance: Dict, dataset: Any) -> Optional[n
             if feat_name in instance:
                 value = instance[feat_name]
             else:
-                # Try case-insensitive match
+                # Try fuzzy matching: case-insensitive + normalize underscores/hyphens
                 value = None
+                feat_name_normalized = feat_name.lower().replace('-', '_').replace(' ', '_')
+                
                 for key in instance.keys():
-                    if key.lower() == feat_name.lower():
+                    key_normalized = key.lower().replace('-', '_').replace(' ', '_')
+                    if key_normalized == feat_name_normalized:
                         value = instance[key]
                         break
+                
+                # Special mappings for common name variations
+                if value is None:
+                    # Handle sex/gender synonym
+                    if feat_name.lower() in ['sex', 'gender']:
+                        for key in instance.keys():
+                            if key.lower() in ['sex', 'gender']:
+                                value = instance[key]
+                                break
                 
                 if value is None:
                     return None
@@ -1164,10 +1190,13 @@ def compute_fra_metrics(entry: Dict, parsed: Dict, dataset_name: str) -> Dict[st
         try:
             rank = int(rank_value) if isinstance(rank_value, (int, str)) else None
             if rank is not None:
+                # Strip angle brackets if present (models sometimes include them from prompt template)
+                clean_feat_name = feat_name.strip('<>') if isinstance(feat_name, str) else feat_name
+                
                 # Find matching feature in changed_features (case-insensitive)
                 matching_feat = None
                 for cf in changed_features:
-                    if cf.lower() == feat_name.lower():
+                    if cf.lower() == clean_feat_name.lower():
                         matching_feat = cf
                         break
                 if matching_feat:

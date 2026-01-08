@@ -129,6 +129,92 @@ class Dataset:
             
             self.df = helpers.load_adult_income_dataset()
             
+            # Rename columns to match counterfactual data naming convention
+            column_rename_map = {
+                'sex': 'gender',
+                'marital-status': 'marital_status',
+                'hours-per-week': 'hours_per_week',
+                'education-num': 'education_num',
+                'capital-gain': 'capital_gain',
+                'capital-loss': 'capital_loss',
+                'native-country': 'native_country',
+            }
+            self.df = self.df.rename(columns=column_rename_map)
+            
+            # Drop columns not present in counterfactual data
+            # Keep only: age, workclass, education, marital_status, occupation, race, gender, hours_per_week, income
+            columns_to_keep = ['age', 'workclass', 'education', 'marital_status', 'occupation', 
+                               'race', 'gender', 'hours_per_week', 'income']
+            columns_to_drop = [col for col in self.df.columns if col not in columns_to_keep]
+            if columns_to_drop:
+                self.df = self.df.drop(columns=columns_to_drop)
+            
+            # Simplify categorical values to match counterfactual data format
+            # Marital status: group into "Single" vs "Married"
+            marital_mapping = {
+                'Never-married': 'Single',
+                'Divorced': 'Single',
+                'Separated': 'Single',
+                'Widowed': 'Single',
+                'Married-civ-spouse': 'Married',
+                'Married-spouse-absent': 'Married',
+                'Married-AF-spouse': 'Married',
+            }
+            self.df['marital_status'] = self.df['marital_status'].replace(marital_mapping)
+            
+            # Workclass: simplify categories
+            workclass_mapping = {
+                'Private': 'Private',
+                'Self-emp-not-inc': 'Self-Employed',
+                'Self-emp-inc': 'Self-Employed',
+                'Federal-gov': 'Government',
+                'Local-gov': 'Government',
+                'State-gov': 'Government',
+                'Without-pay': 'Other',
+                'Never-worked': 'Other',
+            }
+            self.df['workclass'] = self.df['workclass'].replace(workclass_mapping)
+            
+            # Occupation: simplify categories
+            occupation_mapping = {
+                'Exec-managerial': 'Professional',
+                'Prof-specialty': 'Professional',
+                'Tech-support': 'Professional',
+                'Adm-clerical': 'White-Collar',
+                'Sales': 'Sales',
+                'Craft-repair': 'Blue-Collar',
+                'Machine-op-inspct': 'Blue-Collar',
+                'Transport-moving': 'Blue-Collar',
+                'Handlers-cleaners': 'Blue-Collar',
+                'Farming-fishing': 'Blue-Collar',
+                'Protective-serv': 'Service',
+                'Priv-house-serv': 'Service',
+                'Other-service': 'Service',
+                'Armed-Forces': 'Other',
+            }
+            self.df['occupation'] = self.df['occupation'].replace(occupation_mapping)
+            
+            # Education: simplify categories
+            education_mapping = {
+                'Preschool': 'School',
+                '1st-4th': 'School',
+                '5th-6th': 'School',
+                '7th-8th': 'School',
+                '9th': 'School',
+                '10th': 'School',
+                '11th': 'School',
+                '12th': 'School',
+                'HS-grad': 'HS-grad',
+                'Some-college': 'Some-college',
+                'Assoc-voc': 'Associate',
+                'Assoc-acdm': 'Associate',
+                'Bachelors': 'Bachelors',
+                'Masters': 'Masters',
+                'Prof-school': 'Professional-school',
+                'Doctorate': 'Doctorate',
+            }
+            self.df['education'] = self.df['education'].replace(education_mapping)
+            
             # Encode categorical features
             categorical_columns = self.df.select_dtypes(include=['object']).columns
             for column in categorical_columns:
