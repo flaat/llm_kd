@@ -149,13 +149,13 @@ class EnergyMonitor:
         pass
 
 
-def _strip_reasoning_sections(text: str) -> str:
+def strip_reasoning_sections(text: str) -> str:
     # Remove reasoning blocks like <think>...</think>
     pattern = r"<(think|thinking|reasoning)[^>]*>.*?</\1>"
     return re.sub(pattern, "", text, flags=re.DOTALL | re.IGNORECASE)
 
 
-def _last_code_block_json(text: str):
+def last_code_block_json(text: str):
     # Look for the last ```json ... ``` or generic ``` ... ```
     matches = re.findall(r"```json\s*(.*?)\s*```", text, flags=re.DOTALL | re.IGNORECASE)
     if not matches:
@@ -163,7 +163,7 @@ def _last_code_block_json(text: str):
     return matches[-1].strip() if matches else None
 
 
-def _last_balanced_json_object(text: str):
+def last_balanced_json_object(text: str):
     # Find the last balanced JSON-like object
     last_obj = None
     stack = 0
@@ -183,7 +183,7 @@ def _last_balanced_json_object(text: str):
     return last_obj.strip() if last_obj else None
 
 
-def _parse_json_loose(blob: str):
+def parse_json_loose(blob: str):
     # Try strict JSON, then a loose parse via ast.literal_eval
     try:
         return json.loads(blob)
@@ -209,17 +209,17 @@ def extract_single_narrative(outputs):
         print("⚠️ Nessun testo generato nell'output.")
         return None
 
-    cleaned = _strip_reasoning_sections(text)
+    cleaned = strip_reasoning_sections(text)
     response = None
 
-    blob = _last_code_block_json(cleaned)
+    blob = last_code_block_json(cleaned)
     if blob:
-        response = _parse_json_loose(blob)
+        response = parse_json_loose(blob)
 
     if response is None:
-        blob = _last_balanced_json_object(cleaned)
+        blob = last_balanced_json_object(cleaned)
         if blob:
-            response = _parse_json_loose(blob)
+            response = parse_json_loose(blob)
 
     if isinstance(response, dict):
         if "explanation" in response and isinstance(response["explanation"], str):

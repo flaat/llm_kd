@@ -65,7 +65,7 @@ def parse_args():
 	# Single-run (non-validation) convenience flags
 	parser.add_argument("--dataset-name", type=str, help="Dataset name for single run (non-validation).")
 	parser.add_argument("--worker-model", type=str, help="Worker model name for single run.")
-	parser.add_argument("--refiner", action="store_true", help="Enable refiner for single run.")
+	parser.add_argument("--refiner", action="store_true", help="Enable refiner mode (for validation or single run). For validation, worker and refiner models are the same, so provide single model names.")
 	parser.add_argument("--worker-finetuned", action="store_true", help="Worker finetuned flag for single run.")
 	parser.add_argument("--refiner-model", type=str, help="Refiner model name for single run (required if --refiner).")
 	parser.add_argument("--refiner-finetuned", action="store_true", help="Refiner finetuned flag for single run.")
@@ -78,8 +78,20 @@ def main():
 	if args.validation:
 		if not args.models:
 			raise SystemExit("Provide --models for validation mode.")
-		base_dir = Path("results/fine-tuning/worker_validation")
-		rows = collect_validation_metrics(base_dir, datasets=args.datasets, models=args.models, max_examples=args.max_examples)
+		
+		# Use refiner_validation directory if --refiner flag is set
+		if args.refiner:
+			base_dir = Path("results/fine-tuning/refiner_validation")
+			print(f"Using refiner validation mode. Base directory: {base_dir}")
+			print(f"Note: Worker and refiner models are the same. Converting model names to 'model_name--model_name' format.")
+			# Convert model names to worker--refiner format (where worker == refiner)
+			refiner_models = [f"{model}--{model}" for model in args.models]
+		else:
+			base_dir = Path("results/fine-tuning/worker_validation")
+			print(f"Using worker validation mode. Base directory: {base_dir}")
+			refiner_models = args.models
+		
+		rows = collect_validation_metrics(base_dir, datasets=args.datasets, models=refiner_models, max_examples=args.max_examples)
 		if not rows:
 			raise SystemExit("No metrics collected. Check dataset/model names or input files.")
 

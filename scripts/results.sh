@@ -3,9 +3,9 @@ set -euo pipefail
 
 # Edit these lists as needed
 DATASETS=(
-    "adult"
+    #"adult"
     #"titanic"
-    #"california"
+    "california"
     #"diabetes"
 )
 WORKER_MODELS=(
@@ -16,6 +16,7 @@ WORKER_MODELS=(
     "unsloth_qwen3_1.7B"
     "unsloth_llama_3B-Instruct"
     "unsloth_qwen_3B"
+    "unsloth_qwen3_4B"
 )
 REFINER_MODELS=(
     "unsloth_qwen_0.5B"
@@ -25,6 +26,7 @@ REFINER_MODELS=(
     "unsloth_qwen3_1.7B"
     "unsloth_llama_3B-Instruct"
     "unsloth_qwen_3B"
+    "unsloth_qwen3_4B"
 )
 
 MAX_EXAMPLES=200

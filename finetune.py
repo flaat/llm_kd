@@ -159,7 +159,7 @@ def setup_trainer(model, tokenizer, dataset, output_dir: str) -> SFTTrainer:
         seed=3407,
         report_to="none",                   # Set to "wandb" for Weights & Biases logging
         save_strategy="steps",
-        save_steps=50
+        save_steps=20
     )
 
     trainer = SFTTrainer(
@@ -338,9 +338,11 @@ def main(model_name: str, dataset_name: str, refiner: bool) -> None:
     
     # Load dataset
     if refiner:
-        json_file_path = f"data/{dataset_name}_refiner_qwen3_30B_A3B_cleaned.json"
+        json_file_path = f"data/{dataset_name}_refiner_unsloth_qwen3_1.7B--qwen3_30B_A3B_cleaned.json"
     else:
         json_file_path = f"data/{dataset_name}_worker_qwen3_30B_A3B_cleaned.json"
+    
+    print(json_file_path)
     dataset = load_json_to_hf_dataset(json_file_path)
     
     # Create formatting function and process dataset

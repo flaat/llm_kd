@@ -382,10 +382,10 @@ def compute_metrics_for_dataset(data: Dict, max_examples: int = 200, dataset_nam
                     fra_lime_0_2_values.append(fra_metrics["fra_lime_0.2"])
 
     parsing_rate = parsed_success / parsed_total if parsed_total else 0.0
-    perfect_ff_rate = perfect_ff / parsed_total if parsed_total else 0.0
+    perfect_ff_rate = perfect_ff / comparable_total if comparable_total else 0.0
     avg_ff_rate = statistics.mean(avg_ff_values) if avg_ff_values else 0.0
     avg_ff_std = statistics.stdev(avg_ff_values) if len(avg_ff_values) > 1 else 0.0
-    target_f_rate = target_correct_total / parsed_total if parsed_total else 0.0
+    target_f_rate = target_correct_total / comparable_total if comparable_total else 0.0
     
     # Compute FRA averages
     fra_shap_0_05_avg = statistics.mean(fra_shap_0_05_values) if fra_shap_0_05_values else None
