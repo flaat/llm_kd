@@ -523,6 +523,8 @@ def build_dataset_ref(worker_model_name: str, refiner_model_name: str, temperatu
 
     if dataset == "adult":
         dataset = "adult income"
+    elif dataset == "california":
+        dataset = "california housing"
 
     for dataset_name, examples in data1.items():
 

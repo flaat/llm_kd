@@ -19,7 +19,7 @@ model_list=(
     "unsloth_qwen3_1.7B"
     "unsloth_llama_3B-Instruct"
     "unsloth_qwen_3B"
-    "unsloth_qwen3_4B-Instruct"
+    "unsloth_qwen3_4B"
 )
 
 # Iterate over each model configuration and run finetune.py accordingly.

@@ -273,7 +273,7 @@ def clean_extraneous_features(entry, json_info, parsed_json, extras):
     return True
 
 
-def check_truncated_generations(dataset: str, model: str, type_name: str, clean: bool = False, check_cleaned: bool = False):
+def check_truncated_generations(dataset: str, worker_model: str, refiner_model: str, type_name: str, clean: bool = False, check_cleaned: bool = False):
     """
     Check for truncated generations in the dataset JSON file.
     
@@ -285,9 +285,15 @@ def check_truncated_generations(dataset: str, model: str, type_name: str, clean:
     """
     # Construct filename
     if check_cleaned:
-        filename = f"data/{dataset}_{type_name}_{model}_cleaned.json"
+        if type_name == 'worker':
+            filename = f"data/{dataset}_{type_name}_{worker_model}_cleaned.json"
+        else:
+            filename = f"data/{dataset}_{type_name}_{worker_model}--{refiner_model}_cleaned.json"   
     else:   
-        filename = f"data/{dataset}_{type_name}_{model}.json"
+        if type_name == 'worker':
+            filename = f"data/{dataset}_{type_name}_{worker_model}.json"
+        else:
+            filename = f"data/{dataset}_{type_name}_{worker_model}--{refiner_model}.json"
     
     # Check if file exists
     if not os.path.exists(filename):
@@ -599,7 +605,14 @@ Example usage:
     )
     
     parser.add_argument(
-        '--model',
+        '--worker_model',
+        type=str,
+        default='unsloth_qwen3_1.7B',
+        help='Name of the model (default: unsloth_qwen3_1.7B)'
+    )
+    
+    parser.add_argument(
+        '--refiner_model',
         type=str,
         default='qwen3_30B_A3B',
         help='Name of the model (default: qwen3_30B_A3B)'
@@ -627,7 +640,7 @@ Example usage:
     
     args = parser.parse_args()
     
-    check_truncated_generations(args.dataset, args.model, args.type, args.clean, args.check_cleaned)
+    check_truncated_generations(args.dataset, args.worker_model, args.refiner_model, args.type, args.clean, args.check_cleaned)
 
 
 if __name__ == "__main__":
