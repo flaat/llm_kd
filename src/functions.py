@@ -310,8 +310,11 @@ def compute_entry_metrics(entry: Dict, parsed: Optional[Dict]) -> Tuple[bool, Op
                         break
             
             if parsed_feat:
-                check_factual = factual_gt == parsed_feat.get("factual")
-                check_counterfactual = counterfactual_gt == parsed_feat.get("counterfactual")
+                # Handle both int and string comparisons (like target variable check)
+                parsed_factual = parsed_feat.get("factual")
+                parsed_counterfactual = parsed_feat.get("counterfactual")
+                check_factual = factual_gt == parsed_factual or str(factual_gt) == str(parsed_factual)
+                check_counterfactual = counterfactual_gt == parsed_counterfactual or str(counterfactual_gt) == str(parsed_counterfactual)
                 if check_factual and check_counterfactual:
                     features_counter += 1
         except Exception:

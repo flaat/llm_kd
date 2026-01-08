@@ -159,7 +159,7 @@ def setup_trainer(model, tokenizer, dataset, output_dir: str) -> SFTTrainer:
         seed=3407,
         report_to="none",                   # Set to "wandb" for Weights & Biases logging
         save_strategy="steps",
-        save_steps=20
+        save_steps=50
     )
 
     trainer = SFTTrainer(
