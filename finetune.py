@@ -147,7 +147,7 @@ def setup_trainer(model, tokenizer, dataset, output_dir: str) -> SFTTrainer:
         per_device_train_batch_size=1,
         gradient_accumulation_steps=32,
         warmup_ratio=0.075,
-        num_train_epochs=1,
+        num_train_epochs=3, # Increase to 3 epochs for the refiner dataset, which is smaller. The default is 1 epoch.
         learning_rate=2e-4,
         overwrite_output_dir=False,
         fp16=not is_bfloat16_supported(),

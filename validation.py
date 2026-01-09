@@ -145,7 +145,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         '--checkpoint_every',
         type=int,
-        default=20,
+        default=50,
         help='Number of iterations between saving checkpoints (default: 50)'
     )
 

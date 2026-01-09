@@ -13,6 +13,7 @@ import subprocess
 import threading
 from data.dataset_kb import dataset_kb
 from .utils import MODEL_MAPPING, prompt, prompt_ref, get_checkpoint_step
+from .build_dataset import extract_single_narrative
 import re
 from vllm.lora.request import LoRARequest
 
@@ -213,46 +214,72 @@ class VLLMLogCapture:
     def __init__(self):
         self.model_weight_size_gb = 0.0
         self.log_output = []
+        self.handlers = []
+        self.gpu_memory_before = 0.0
         
     def capture_logs(self):
-        """Setup log capture for vLLM."""
+        """Setup log capture for vLLM - capture from multiple loggers."""
+        # Record GPU memory before model loading for fallback measurement
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            self.gpu_memory_before = torch.cuda.memory_allocated() / (1024 ** 3)
+        
         # Create a custom handler to capture logs
         self.log_stream = io.StringIO()
         
-        # Get the vLLM logger
-        vllm_logger = logging.getLogger('vllm')
-        
         # Create handler that writes to our string buffer
         handler = logging.StreamHandler(self.log_stream)
-        handler.setLevel(logging.INFO)
+        handler.setLevel(logging.DEBUG)
+        formatter = logging.Formatter('%(name)s - %(message)s')
+        handler.setFormatter(formatter)
         
-        # Add our handler
-        vllm_logger.addHandler(handler)
-        vllm_logger.setLevel(logging.INFO)
+        # Capture from vllm and its submodules
+        logger_names = ['vllm', 'vllm.executor', 'vllm.worker', 'vllm.model_executor']
+        for logger_name in logger_names:
+            logger = logging.getLogger(logger_name)
+            logger.addHandler(handler)
+            logger.setLevel(logging.DEBUG)
+            self.handlers.append((logger_name, handler))
         
         return handler
     
-    def extract_model_size(self, handler):
-        """Extract model size from captured logs."""
-        # Remove our handler
-        vllm_logger = logging.getLogger('vllm')
-        vllm_logger.removeHandler(handler)
+    def extract_model_size(self, handler, llm_instance=None):
+        """Extract model size from captured logs or from GPU memory difference."""
+        import re
+        
+        # Remove handlers from all loggers
+        for logger_name, h in self.handlers:
+            logger = logging.getLogger(logger_name)
+            try:
+                logger.removeHandler(h)
+            except:
+                pass
         
         # Get the log content
         log_content = self.log_stream.getvalue()
         
         # Look for the pattern "Loading model weights took X.XXXX GB"
-        import re
         pattern = r"Loading model weights took ([\d.]+) GB"
         match = re.search(pattern, log_content)
         
         if match:
             self.model_weight_size_gb = float(match.group(1))
-            print(f"📊 Captured model weight size: {self.model_weight_size_gb:.4f} GB")
+            print(f"📊 Captured model weight size from logs: {self.model_weight_size_gb:.4f} GB")
         else:
-            print("⚠️ Could not capture model weight size from logs")
-            # Fallback to 0
-            self.model_weight_size_gb = 0.0
+            # Fallback: Calculate from GPU memory difference
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+                gpu_memory_after = torch.cuda.memory_allocated() / (1024 ** 3)
+                self.model_weight_size_gb = gpu_memory_after - self.gpu_memory_before
+                if self.model_weight_size_gb > 0:
+                    print(f"📊 Estimated model weight size from GPU memory: {self.model_weight_size_gb:.4f} GB")
+                else:
+                    # If negative or zero, try to get total allocated
+                    self.model_weight_size_gb = gpu_memory_after if gpu_memory_after > 0 else 0.0
+                    print(f"📊 Using total GPU memory as model size: {self.model_weight_size_gb:.4f} GB")
+            else:
+                print("⚠️ Could not capture model weight size (no CUDA available)")
+                self.model_weight_size_gb = 0.0
             
         return self.model_weight_size_gb
 
@@ -386,8 +413,8 @@ def _run_worker_only_pipeline(
     model_load_end = time.time()
     model_loading_time = model_load_end - model_load_start
 
-    # Extract model size from logs
-    model_disk_size_gb = log_capture.extract_model_size(handler)
+    # Extract model size from logs (with LLM instance as fallback)
+    model_disk_size_gb = log_capture.extract_model_size(handler, llm_instance=llm)
 
     print(f"[WORKER] 📊 Model loading time: {model_loading_time:.2f} seconds")
     print(f"[WORKER] 📊 Model weight size: {model_disk_size_gb:.4f} GB")
@@ -652,6 +679,9 @@ def _run_worker_refiner_pipeline(
 ):
     """Former `test_llm_refiner` pipeline (worker + refiner)."""
 
+    print("=" * 80)
+    print("[STEP 1/8] Starting Worker+Refiner pipeline")
+    print("=" * 80)
     print(
         f"[CONFIG] Worker+Refiner pipeline: "
         f"worker={worker_model_name} (fine_tuned={worker_fine_tuned}), "
@@ -673,14 +703,16 @@ def _run_worker_refiner_pipeline(
     mapped_refiner_model_name = MODEL_MAPPING[refiner_model_name]
 
     # Decide if we can share model between worker and refiner (check once before loop)
-    share_model = (
-        worker_name == refiner_name
-        and worker_fine_tuned == refiner_fine_tuned
-    )
+    # Models can be shared if they have the same name, even if fine-tuning differs.
+    # When enable_lora=True, vLLM loads the base model and enables LoRA support.
+    # LoRA adapters are applied conditionally during generation via lora_request parameter.
+    share_model = (worker_name == refiner_name)
 
     # If sharing model, also share tokenizer
     if share_model:
-        print("[SHARING] Using a single tokenizer instance for worker and refiner.")
+        print(f"[SHARING] Using a single tokenizer and model instance for worker and refiner.")
+        print(f"[SHARING] Worker fine-tuned: {worker_fine_tuned}, Refiner fine-tuned: {refiner_fine_tuned}")
+        print(f"[SHARING] LoRA adapters will be applied conditionally during generation.")
         tokenizer_worker = AutoTokenizer.from_pretrained(mapped_worker_model_name)
         tokenizer_refiner = tokenizer_worker
     else:
@@ -743,7 +775,7 @@ def _run_worker_refiner_pipeline(
         )
         
         worker_model_load_end = time.time()
-        worker_model_disk_size_gb = log_capture_worker.extract_model_size(handler_worker)
+        worker_model_disk_size_gb = log_capture_worker.extract_model_size(handler_worker, llm_instance=worker_llm_temp)
         
         # Get GPU memory after worker model loading
         gpu_memory_after_worker = get_gpu_memory_usage()
@@ -766,7 +798,7 @@ def _run_worker_refiner_pipeline(
         )
         
         refiner_model_load_end = time.time()
-        refiner_model_disk_size_gb = log_capture_refiner.extract_model_size(handler_refiner)
+        refiner_model_disk_size_gb = log_capture_refiner.extract_model_size(handler_refiner, llm_instance=refiner_llm_temp)
         
         # Get GPU memory after both models loaded
         gpu_memory_after_both = get_gpu_memory_usage()
@@ -802,9 +834,11 @@ def _run_worker_refiner_pipeline(
             "power_samples": [],
         }
 
+    print("[STEP 2/8] Loading counterfactual data...")
     # Load counterfactual data
     with open(f"src/explainer/test_counterfactuals.json", 'r', encoding='utf-8') as file1:
         data1 = json.load(file1)
+    print("[STEP 2/8] ✅ Counterfactual data loaded successfully")
 
     i = 0  # Counter for responses
     NUM_FACTUALS = 40  # Number of factuals to process
@@ -834,8 +868,10 @@ def _run_worker_refiner_pipeline(
             base_dir,
             f"{worker_name}--{refiner_name}_response_finetuned_{worker_fine_tuned}-{refiner_fine_tuned}.json",
         )
+        feasibility_dir = os.path.join(base_dir, "feasibility")
+        os.makedirs(feasibility_dir, exist_ok=True)
         feasibility_output_file = os.path.join(
-            base_dir,
+            feasibility_dir,
             f"{worker_name}--{refiner_name}_feasibility_response_finetuned_{worker_fine_tuned}-{refiner_fine_tuned}.json",
         )
 
@@ -843,10 +879,12 @@ def _run_worker_refiner_pipeline(
     if feasibility_output_file:
         print(f"[IO] Feasibility metrics output file: {feasibility_output_file}")
 
+    print("[STEP 3/8] Initializing models...")
     # Initialize shared model ONCE before the loop if sharing is enabled
     shared_llm = None
     if share_model:
         print("[SHARING] Initializing a single LLM instance for worker and refiner (will be reused for all examples).")
+        print(f"[SHARING] LoRA support enabled: {worker_fine_tuned or refiner_fine_tuned} (adapters applied conditionally during generation)")
         shared_llm = LLM(
             model=mapped_worker_model_name,
             gpu_memory_utilization=0.6,
@@ -855,27 +893,36 @@ def _run_worker_refiner_pipeline(
             enable_lora=worker_fine_tuned or refiner_fine_tuned,
         )
         print("[SHARING] Shared model loaded successfully.")
+    print("[STEP 3/8] ✅ Models initialized")
 
     for dataset_name, examples in data1.items():
 
         dataset_key = dataset
         if dataset_key == "adult":
             dataset_key = "adult income"
+        elif dataset_key == "california":
+            dataset_key = "california housing"
 
         if dataset_name.lower() == dataset_key:
+            print("[STEP 4/8] Starting to process examples...")
             print(f"[CONFIG] Processing {NUM_FACTUALS} factuals with {NUM_COUNTERFACTUALS_PER_FACTUAL} counterfactuals each (total: {NUM_FACTUALS * NUM_COUNTERFACTUALS_PER_FACTUAL} iterations)")
 
             # Sort indices to ensure consistent ordering (indices are strings like "0", "1", etc.)
             sorted_indices = sorted(examples.keys(), key=lambda x: int(x))[:NUM_FACTUALS]
             
+            factual_idx = 0
             for index in sorted_indices:
+                factual_idx += 1
                 values = examples[index]
                 # Process only the first NUM_COUNTERFACTUALS_PER_FACTUAL counterfactuals
                 counterfactuals_to_process = values["counterfactuals"][:NUM_COUNTERFACTUALS_PER_FACTUAL]
                 
-                for counterfactual in counterfactuals_to_process:
+                print(f"[PROGRESS] Processing factual #{factual_idx}/{NUM_FACTUALS} (index: {index})")
+                
+                for cf_idx, counterfactual in enumerate(counterfactuals_to_process, 1):
                     
                     if LOWER_BOUND <= i <= UPPER_BOUND:
+                        print(f"[STEP 5/8] Processing explanation #{i} (Factual {factual_idx}/{NUM_FACTUALS}, Counterfactual {cf_idx}/{NUM_COUNTERFACTUALS_PER_FACTUAL})")
                         
                         current_prompt_worker = base_prompt.format(
                             dataset_description=dataset_kb[dataset_name], 
@@ -909,72 +956,94 @@ def _run_worker_refiner_pipeline(
                         total_average_power = 0.0
                         total_power_samples = []
                         
+                        print(f"[STEP 6/8] Generating {num_narratives} draft narratives using worker model...")
                         # Generate explanations (draft narratives) using the worker LLM
-                        explanations = []
+                        narratives = []
                         for draft_num in range(num_narratives):
-                            try:
-                                # Initialize energy monitor for each draft
-                                energy_monitor = EnergyMonitor() if analyze_feasibility else None
-                                
-                                with torch.no_grad():
-                                    # Start energy monitoring and time measurement for draft
-                                    if analyze_feasibility:
-                                        energy_monitor.start_monitoring()
-                                        draft_start = time.time()
+                            attempts = 0
+                            narrative = None
+                            while attempts < 2 and narrative is None:
+                                try:
+                                    # Initialize energy monitor for each draft
+                                    energy_monitor = EnergyMonitor() if analyze_feasibility else None
                                     
-                                    if worker_fine_tuned:
-                                        outputs = worker_llm.generate(
-                                            [text],
-                                            sampling_params=sampling_params_worker,
-                                            lora_request=LoRARequest(
-                                                "counterfactual_explainability_adapter_worker",
-                                                1,
-                                                lora_checkpoint_directory_path_worker,
-                                            ),
-                                        )
-                                    else:
-                                        outputs = worker_llm.generate(
-                                            [text],
-                                            sampling_params=sampling_params_worker,
-                                        )
-                                    explanations.append(outputs)
-                                    
-                                    if analyze_feasibility:
-                                        draft_end = time.time()
-                                        energy_metrics = energy_monitor.stop_monitoring()
+                                    with torch.no_grad():
+                                        # Start energy monitoring and time measurement for draft
+                                        if analyze_feasibility:
+                                            energy_monitor.start_monitoring()
+                                            draft_start = time.time()
                                         
-                                        # Accumulate metrics from this draft
-                                        draft_inference_time = draft_end - draft_start
-                                        draft_energy_consumed = energy_metrics['energy_joules']
-                                        draft_average_power = energy_metrics['average_power_watts']
-                                        draft_power_samples_tot = energy_metrics['power_samples']
-                                        power_samples = []
-                                        for j in range(len(draft_power_samples_tot)):
-                                            power_samples.append(draft_power_samples_tot[j][1])
+                                        if worker_fine_tuned:
+                                            outputs = worker_llm.generate(
+                                                [text],
+                                                sampling_params=sampling_params_worker,
+                                                lora_request=LoRARequest(
+                                                    "counterfactual_explainability_adapter_worker",
+                                                    1,
+                                                    lora_checkpoint_directory_path_worker,
+                                                ),
+                                            )
+                                        else:
+                                            outputs = worker_llm.generate(
+                                                [text],
+                                                sampling_params=sampling_params_worker,
+                                            )
+                                        
+                                        # Extract only the explanation field from the output
+                                        narrative = extract_single_narrative(outputs)
+                                        
+                                        if analyze_feasibility:
+                                            draft_end = time.time()
+                                            energy_metrics = energy_monitor.stop_monitoring()
+                                            
+                                            # Accumulate metrics from this draft
+                                            draft_inference_time = draft_end - draft_start
+                                            draft_energy_consumed = energy_metrics['energy_joules']
+                                            draft_average_power = energy_metrics['average_power_watts']
+                                            draft_power_samples_tot = energy_metrics['power_samples']
+                                            power_samples = []
+                                            for j in range(len(draft_power_samples_tot)):
+                                                power_samples.append(draft_power_samples_tot[j][1])
 
-                                        
-                                        total_inference_time += draft_inference_time
-                                        total_energy_consumed += draft_energy_consumed
-                                        total_average_power += draft_average_power
-                                        total_power_samples.append(power_samples)
+                                            
+                                            total_inference_time += draft_inference_time
+                                            total_energy_consumed += draft_energy_consumed
+                                            total_average_power += draft_average_power
+                                            total_power_samples.append(power_samples)
 
-                                        print(f"Draft {draft_num + 1}/{num_narratives} - Time: {draft_inference_time:.2f}s, Energy: {draft_energy_consumed:.2f}J, Power: {draft_average_power:.2f}W")
+                                            if narrative:
+                                                print(f"Draft {draft_num + 1}/{num_narratives} (attempt {attempts + 1}/2) - Success - Time: {draft_inference_time:.2f}s, Energy: {draft_energy_consumed:.2f}J, Power: {draft_average_power:.2f}W")
+                                            else:
+                                                print(f"Draft {draft_num + 1}/{num_narratives} (attempt {attempts + 1}/2) - Failed to extract explanation - Time: {draft_inference_time:.2f}s, Energy: {draft_energy_consumed:.2f}J, Power: {draft_average_power:.2f}W")
+                                            
+                                            # Cleanup energy monitor
+                                            energy_monitor.cleanup()
+                                        else:
+                                            if narrative:
+                                                print(f"Draft {draft_num + 1}/{num_narratives} (attempt {attempts + 1}/2) - Success")
+                                            else:
+                                                print(f"Draft {draft_num + 1}/{num_narratives} (attempt {attempts + 1}/2) - Failed to extract explanation")
                                         
-                                        # Cleanup energy monitor
+                                except AssertionError as assert_e:
+                                    print(f"🚨 Assertion error: {assert_e}")
+                                    if analyze_feasibility and energy_monitor is not None:
+                                        energy_monitor.stop_monitoring()
                                         energy_monitor.cleanup()
-                                        
-                            except AssertionError as assert_e:
-                                print(f"🚨 Assertion error: {assert_e}")
-                                continue
+                                    break
+                                
+                                attempts += 1
+                            
+                            narratives.append(narrative)
                         
-                        # Build draft_narratives string for the refiner prompt
+                        print(f"[STEP 6/8] ✅ Draft narratives generated ({len([n for n in narratives if n is not None])}/{num_narratives} successful)")
+                        
+                        # Build draft_narratives string for the refiner prompt using extracted explanations
                         draft_narratives_parts = []
-                        for idx, draft_outputs in enumerate(explanations):
-                            # Each draft_outputs is a vLLM result list (same shape as in worker-only pipeline)
-                            for out in draft_outputs:
-                                draft_text = out.outputs[0].text
-                            header = f"### Draft Explanation {idx + 1} ###"
-                            draft_narratives_parts.append(f"{header}\n{draft_text}")
+                        for idx, narrative in enumerate(narratives, start=1):
+                            if narrative is not None:
+                                draft_narratives_parts.append(f"### Draft Explanation {idx} ###\n{narrative}")
+                            else:
+                                draft_narratives_parts.append(f"### Draft Explanation {idx} ###\nNone")
                         draft_narratives = "\n\n".join(draft_narratives_parts)
 
                         # Delete the worker LLM to free memory if not shared (only for non-shared case)
@@ -982,6 +1051,7 @@ def _run_worker_refiner_pipeline(
                             del worker_llm
                             torch.cuda.empty_cache()
 
+                        print(f"[STEP 7/8] Refining explanation using refiner model...")
                         current_prompt_refiner = base_prompt_ref.format(
                             dataset_description=dataset_kb[dataset_name],
                             factual_example=str(values["factual"]),
@@ -1072,6 +1142,7 @@ def _run_worker_refiner_pipeline(
                             prompt = output.prompt
                             generated_text = output.outputs[0].text
 
+                        print(f"[STEP 7/8] ✅ Refiner completed")
                         print(generated_text)
                         
                         # Store response data
@@ -1102,12 +1173,14 @@ def _run_worker_refiner_pipeline(
 
                         # Save every 10 responses (always save test results)
                         if i % 10 == 0:
+                            print(f"[STEP 8/8] Saving progress: {i} explanations completed")
                             save_responses(responses, output_file)
                             responses = {}  # Clear the temporary dictionary to prevent duplication
 
                         # Delete large variables to free memory
                         del generated_text
                         del outputs
+                        print(f"[PROGRESS] Explanation #{i} completed. Progress: {i}/{UPPER_BOUND} ({100*i/UPPER_BOUND:.1f}%)")
                     i += 1
     
     # Cleanup shared model after all examples are processed
@@ -1116,9 +1189,11 @@ def _run_worker_refiner_pipeline(
         del shared_llm
         torch.cuda.empty_cache()
     
+    print("[STEP 8/8] Finalizing and saving results...")
     # Final save after loop completion
     # Always save test results
     save_responses(responses, output_file)
+    print("[STEP 8/8] ✅ All results saved")
     
     # If analyzing feasibility, also save feasibility metrics to separate file
     if analyze_feasibility:
@@ -1165,3 +1240,7 @@ def _run_worker_refiner_pipeline(
     # Cleanup energy monitor resources
     if 'energy_monitor' in locals() and analyze_feasibility:
         energy_monitor.cleanup()
+    
+    print("=" * 80)
+    print("[COMPLETE] Worker+Refiner pipeline finished successfully!")
+    print("=" * 80)

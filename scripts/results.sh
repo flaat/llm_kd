@@ -3,10 +3,10 @@ set -euo pipefail
 
 # Edit these lists as needed
 DATASETS=(
-    #"adult"
-    #"titanic"
+    "adult"
+    "titanic"
     "california"
-    #"diabetes"
+    "diabetes"
 )
 WORKER_MODELS=(
     "unsloth_qwen_0.5B"
