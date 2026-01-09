@@ -86,14 +86,14 @@ CHECKPOINT_MAPPING = {
     },
     "california": {
         "draft_generator": {
-            "unsloth_qwen_0.5B": 100,
-            "unsloth_qwen3_0.6B": 1000,
-            "unsloth_llama_1B-Instruct": 300,
-            "unsloth_deepseek_r1_qwen_1.5B": 300,
-            "unsloth_qwen3_1.7B": 550,
-            "unsloth_llama_3B-Instruct": 100,
-            "unsloth_qwen_3B": 300,
-            "unsloth_qwen3_4B": 50,
+            "unsloth_qwen_0.5B": 750,
+            "unsloth_qwen3_0.6B": 850,
+            "unsloth_llama_1B-Instruct": 1000,
+            "unsloth_deepseek_r1_qwen_1.5B": 500,
+            "unsloth_qwen3_1.7B": 300,
+            "unsloth_llama_3B-Instruct": 700,
+            "unsloth_qwen_3B": 200,
+            "unsloth_qwen3_4B": 300,
         },
         "refiner": {
             "unsloth_qwen_0.5B": 800,
