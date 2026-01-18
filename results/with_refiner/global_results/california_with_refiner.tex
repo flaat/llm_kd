@@ -1,0 +1,17 @@
+\begin{table*}[htbp]
+    \centering
+    \begin{tabular}{l|p{2.5cm}|p{2.5cm}|p{2.5cm}|p{2.5cm}}
+        \textbf{Model} & \textbf{Avg. FF} \newline (Plain / FT) & \textbf{PFF} \newline (Plain / FT) & \textbf{TF} \newline (Plain / FT) & \textbf{JPR} \newline (Plain / FT) \\ 
+        \midrule 
+deepseek_r1_qwen_1.5B--unsloth_deepseek_r1_qwen_1.5B & 0.0148 / 0.9621 & 0.0 / 0.9091 & 0.3704 / 1.0 & 0.6834 / 1.0 \\
+llama_1B-Instruct--unsloth_llama_1B-Instruct & 0.2267 / 0.9451 & 0.0 / 0.8659 & 0.5814 / 1.0 & 0.4372 / 0.7186 \\
+llama_3B-Instruct--unsloth_llama_3B-Instruct & 1.0 / 0.9949 & 0.0 / 0.9898 & 1.0 / 1.0 & 0.201 / 0.995 \\
+qwen3_0.6B--unsloth_qwen3_0.6B & 0.0205 / 0.9308 & 0.0 / 0.8615 & 0.3692 / 1.0 & 0.9799 / 1.0 \\
+qwen3_1.7B--unsloth_qwen3_1.7B & 0.8894 / 0.9975 & 0.5477 / 0.9899 & 1.0 / 1.0 & 1.0 / 1.0 \\
+qwen3_4B--unsloth_qwen3_4B & 0.9698 / 1.0 & 0.4925 / 0.9899 & 1.0 / 1.0 & 1.0 / 0.995 \\
+qwen_0.5B--unsloth_qwen_0.5B & 0.1532 / 0.8895 & 0.0 / 0.7737 & 0.0591 / 1.0 & 0.9347 / 0.9648 \\
+qwen_3B--unsloth_qwen_3B & 1.0 / 0.9899 & 0.1206 / 0.9749 & 0.9849 / 1.0 & 1.0 / 1.0 \\
+    \end{tabular} 
+    \caption{Comparison of results for worker+refiner on california dataset.}
+    \label{tab:results-california-refiner}
+ \end{table*}

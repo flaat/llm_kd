@@ -545,7 +545,7 @@ def validate_refiner(worker_model_name: str, refiner_model_name: str, dataset: s
         # Use lower GPU memory utilization to account for residual memory from previous checkpoints
         worker_llm = LLM(
             model=worker_model_path,
-            gpu_memory_utilization=0.5,
+            gpu_memory_utilization=0.6,
             max_model_len=max_model_len,
             max_num_seqs=1,
             enable_lora=fine_tuned,
@@ -556,7 +556,7 @@ def validate_refiner(worker_model_name: str, refiner_model_name: str, dataset: s
         if worker_model_name != refiner_model_name:
             refiner_llm = LLM(
                 model=refiner_model_path,
-                gpu_memory_utilization=0.5,
+                gpu_memory_utilization=0.6,
                 max_model_len=max_model_len,
                 max_num_seqs=1,
                 enable_lora=fine_tuned,

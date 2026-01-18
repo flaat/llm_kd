@@ -1,0 +1,18 @@
+\begin{table*}[htbp]
+    \centering
+    \begin{tabular}{l|p{2.8cm}|p{2.8cm}|p{2.8cm}|p{2.8cm}}
+        \textbf{Model} & \textbf{FRA SHAP 0.05} \\ (Plain / FT) & \textbf{FRA SHAP 0.1} \\ (Plain / FT) & \textbf{FRA SHAP 0.2} \\ (Plain / FT) & \textbf{FRA LIME 0.05} \\ (Plain / FT) & \textbf{FRA LIME 0.1} \\ (Plain / FT) & \textbf{FRA LIME 0.2} \\ (Plain / FT) \\ 
+\textbf{FRA LIME 0.1} \\ (Plain / FT) \\ 
+        \midrule 
+deepseek_r1_qwen_1.5B--unsloth_deepseek_r1_qwen_1.5B & 0.9667 & 0.9667 & 0.9667 & 0.9612 & 0.9612 & 0.9612 \\
+llama_1B-Instruct--unsloth_llama_1B-Instruct & 0.9756 & 0.9756 & 0.9756 & 0.9773 & 0.9773 & 0.9773 \\
+llama_3B-Instruct--unsloth_llama_3B-Instruct & 0.9626 & 0.9626 & 0.9626 & 0.9504 & 0.9504 & 0.9587 \\
+qwen3_0.6B--unsloth_qwen3_0.6B & 0.9778 & 0.9778 & 0.9778 & 0.9604 & 0.9505 & 0.9604 \\
+qwen3_1.7B--unsloth_qwen3_1.7B & 1.0 / 0.9535 & 1.0 / 0.9535 & 1.0 / 0.9535 & 1.0 / 1.0 & 1.0 / 1.0 & 1.0 / 1.0 \\
+qwen3_4B--unsloth_qwen3_4B & 1.0 / 0.9706 & 1.0 / 0.9706 & 1.0 / 0.9706 & 0.9851 / 0.9912 & 0.9851 / 0.9912 & 0.9851 / 0.9912 \\
+qwen_0.5B--unsloth_qwen_0.5B & 1.0 & 1.0 & 1.0 & 1.0 & 1.0 & 1.0 \\
+qwen_3B--unsloth_qwen_3B & 0.9583 / 0.9712 & 0.9583 / 0.9712 & 0.9583 / 0.9712 & 1.0 / 1.0 & 1.0 / 0.9912 & 1.0 / 0.9912 \\
+    \end{tabular} 
+    \caption{FRA metrics for worker+refiner on california dataset.}
+    \label{tab:fra-results-california-refiner-fra}
+ \end{table*}

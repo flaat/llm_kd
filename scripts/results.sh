@@ -3,10 +3,10 @@ set -euo pipefail
 
 # Edit these lists as needed
 DATASETS=(
-    "adult"
-    "titanic"
+    #"adult"
+    #"titanic"
     "california"
-    "diabetes"
+    #"diabetes"
 )
 WORKER_MODELS=(
     "unsloth_qwen_0.5B"
@@ -32,9 +32,9 @@ REFINER_MODELS=(
 MAX_EXAMPLES=200
 
 # Single-run / loop options
-REFINER=0                # 1 to enable refiner
+REFINER=1                # 1 to enable refiner
 WORKER_FINETUNED=1       # applies to all worker runs
-REFINER_FINETUNED=0      # applies to all refiner runs
+REFINER_FINETUNED=1      # applies to all refiner runs
 
 # Override to run exactly one pair instead of loops (leave empty to use loops)
 DATASET_NAME_OVERRIDE=""
@@ -71,11 +71,9 @@ fi
 if [[ -n "$DATASET_NAME_OVERRIDE" && -n "$WORKER_MODEL_OVERRIDE" ]]; then
   REFINER_ARGS=()
   if [[ $REFINER -eq 1 ]]; then
-    if [[ -z "$REFINER_MODEL_OVERRIDE" ]]; then
-      echo "Set REFINER_MODEL_OVERRIDE when REFINER=1." >&2
-      exit 1
-    fi
-    REFINER_ARGS=(--refiner --refiner-model "$REFINER_MODEL_OVERRIDE")
+    # Use worker model as refiner model if refiner override not set
+    REFINER_MODEL="${REFINER_MODEL_OVERRIDE:-$WORKER_MODEL_OVERRIDE}"
+    REFINER_ARGS=(--refiner --refiner-model "$REFINER_MODEL")
     if [[ $REFINER_FINETUNED -eq 1 ]]; then
       REFINER_ARGS+=("--refiner-finetuned")
     fi
@@ -97,22 +95,21 @@ fi
 for DATASET in "${DATASETS[@]}"; do
   for WORKER in "${WORKER_MODELS[@]}"; do
     if [[ $REFINER -eq 1 ]]; then
-      for REFINER_MODEL in "${REFINER_MODELS[@]}"; do
-        REFINER_ARGS=(--refiner --refiner-model "$REFINER_MODEL")
-        if [[ $REFINER_FINETUNED -eq 1 ]]; then
-          REFINER_ARGS+=("--refiner-finetuned")
-        fi
-        WORKER_FT_ARG=()
-        if [[ $WORKER_FINETUNED -eq 1 ]]; then
-          WORKER_FT_ARG=(--worker-finetuned)
-        fi
-        "$PYTHON_BIN" results.py \
-          --dataset-name "$DATASET" \
-          --worker-model "$WORKER" \
-          --max-examples "$MAX_EXAMPLES" \
-          "${WORKER_FT_ARG[@]}" \
-          "${REFINER_ARGS[@]}"
-      done
+      # Use worker model as refiner model
+      REFINER_ARGS=(--refiner --refiner-model "$WORKER")
+      if [[ $REFINER_FINETUNED -eq 1 ]]; then
+        REFINER_ARGS+=("--refiner-finetuned")
+      fi
+      WORKER_FT_ARG=()
+      if [[ $WORKER_FINETUNED -eq 1 ]]; then
+        WORKER_FT_ARG=(--worker-finetuned)
+      fi
+      "$PYTHON_BIN" results.py \
+        --dataset-name "$DATASET" \
+        --worker-model "$WORKER" \
+        --max-examples "$MAX_EXAMPLES" \
+        "${WORKER_FT_ARG[@]}" \
+        "${REFINER_ARGS[@]}"
     else
       WORKER_FT_ARG=()
       if [[ $WORKER_FINETUNED -eq 1 ]]; then

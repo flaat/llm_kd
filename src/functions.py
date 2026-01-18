@@ -1275,30 +1275,83 @@ def collect_global_results(dataset_name: str, refiner: bool) -> Dict[str, Dict[s
         
         model_name = model_dir.name
         
-        # Look for plain and ft result files
-        plain_file = model_dir / f"results_{model_name}-plain.json"
-        ft_file = model_dir / f"results_{model_name}-ft.json"
-        
         plain_data = None
         ft_data = None
         
-        # Load plain results
-        if plain_file.exists():
-            try:
-                plain_json = load_json(plain_file)
-                if isinstance(plain_json, list) and len(plain_json) > 0:
-                    plain_data = plain_json[0]  # Get first row
-            except Exception as e:
-                print(f"Warning: Could not load {plain_file}: {e}")
-        
-        # Load finetuned results
-        if ft_file.exists():
-            try:
-                ft_json = load_json(ft_file)
-                if isinstance(ft_json, list) and len(ft_json) > 0:
-                    ft_data = ft_json[0]  # Get first row
-            except Exception as e:
-                print(f"Warning: Could not load {ft_file}: {e}")
+        if refiner:
+            # For refiner mode, directory name is {worker_model}--{refiner_model}
+            # Files are named: results_{worker_model}-{worker_suffix}_{refiner_model}-{ref_suffix}.json
+            if "--" in model_name:
+                worker_model, refiner_model = model_name.split("--", 1)
+                # Look for files with worker=ft (worker is typically finetuned)
+                # Try both worker=ft and worker=plain to be safe
+                for worker_suffix in ["ft", "plain"]:
+                    plain_file = model_dir / f"results_{worker_model}-{worker_suffix}_{refiner_model}-plain.json"
+                    ft_file = model_dir / f"results_{worker_model}-{worker_suffix}_{refiner_model}-ft.json"
+                    
+                    # Load plain results (refiner not finetuned)
+                    if plain_data is None and plain_file.exists():
+                        try:
+                            plain_json = load_json(plain_file)
+                            if isinstance(plain_json, list) and len(plain_json) > 0:
+                                plain_data = plain_json[0]  # Get first row
+                        except Exception as e:
+                            print(f"Warning: Could not load {plain_file}: {e}")
+                    
+                    # Load finetuned results (refiner finetuned)
+                    if ft_data is None and ft_file.exists():
+                        try:
+                            ft_json = load_json(ft_file)
+                            if isinstance(ft_json, list) and len(ft_json) > 0:
+                                ft_data = ft_json[0]  # Get first row
+                        except Exception as e:
+                            print(f"Warning: Could not load {ft_file}: {e}")
+                    
+                    # If we found both, we can stop searching
+                    if plain_data is not None and ft_data is not None:
+                        break
+            else:
+                # Fallback: try old pattern
+                plain_file = model_dir / f"results_{model_name}-plain.json"
+                ft_file = model_dir / f"results_{model_name}-ft.json"
+                
+                if plain_file.exists():
+                    try:
+                        plain_json = load_json(plain_file)
+                        if isinstance(plain_json, list) and len(plain_json) > 0:
+                            plain_data = plain_json[0]
+                    except Exception as e:
+                        print(f"Warning: Could not load {plain_file}: {e}")
+                
+                if ft_file.exists():
+                    try:
+                        ft_json = load_json(ft_file)
+                        if isinstance(ft_json, list) and len(ft_json) > 0:
+                            ft_data = ft_json[0]
+                    except Exception as e:
+                        print(f"Warning: Could not load {ft_file}: {e}")
+        else:
+            # For non-refiner mode, use simple pattern
+            plain_file = model_dir / f"results_{model_name}-plain.json"
+            ft_file = model_dir / f"results_{model_name}-ft.json"
+            
+            # Load plain results
+            if plain_file.exists():
+                try:
+                    plain_json = load_json(plain_file)
+                    if isinstance(plain_json, list) and len(plain_json) > 0:
+                        plain_data = plain_json[0]  # Get first row
+                except Exception as e:
+                    print(f"Warning: Could not load {plain_file}: {e}")
+            
+            # Load finetuned results
+            if ft_file.exists():
+                try:
+                    ft_json = load_json(ft_file)
+                    if isinstance(ft_json, list) and len(ft_json) > 0:
+                        ft_data = ft_json[0]  # Get first row
+                except Exception as e:
+                    print(f"Warning: Could not load {ft_file}: {e}")
         
         # Only add if at least one result exists
         if plain_data is not None or ft_data is not None:

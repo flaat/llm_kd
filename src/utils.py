@@ -96,7 +96,14 @@ CHECKPOINT_MAPPING = {
             "unsloth_qwen3_4B": 300,
         },
         "refiner": {
-            "unsloth_qwen_0.5B": 800,
+            "unsloth_qwen_0.5B": 500,
+            "unsloth_qwen3_0.6B": 500,
+            "unsloth_llama_1B-Instruct": 300,
+            "unsloth_deepseek_r1_qwen_1.5B": 300,
+            "unsloth_qwen3_1.7B": 300,
+            "unsloth_llama_3B-Instruct": 550,
+            "unsloth_qwen_3B": 350,
+            "unsloth_qwen3_4B": 250,
         },
     },
     "titanic": {
