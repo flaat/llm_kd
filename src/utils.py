@@ -125,7 +125,14 @@ CHECKPOINT_MAPPING = {
             "unsloth_qwen3_4B": 400,
         },
         "refiner": {
-            "unsloth_qwen_0.5B": 800,
+            "unsloth_qwen_0.5B": 300,
+            "unsloth_qwen3_0.6B": 250,
+            "unsloth_llama_1B-Instruct": 650,
+            "unsloth_deepseek_r1_qwen_1.5B": 500,
+            "unsloth_qwen3_1.7B": 350,
+            "unsloth_llama_3B-Instruct": 0,
+            "unsloth_qwen_3B": 0,
+            "unsloth_qwen3_4B": 0,
         },
     },
     "diabetes": {
