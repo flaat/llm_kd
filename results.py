@@ -50,9 +50,9 @@ def parse_args():
 		"unsloth_llama_1B-Instruct",
 		"unsloth_deepseek_r1_qwen_1.5B",
 		"unsloth_qwen3_1.7B",
-		"unsloth_llama_3B-Instruct",
-		"unsloth_qwen_3B",
-		"unsloth_qwen3_4B",
+		#"unsloth_llama_3B-Instruct",
+		#"unsloth_qwen_3B",
+		#"unsloth_qwen3_4B",
 	], help="Models to include for validation.")
 	parser.add_argument("--max-examples", type=int, default=200, help="Max examples per checkpoint file.")
 	parser.add_argument("--output-dir", type=Path, default=None, help="Root directory for validation outputs; defaults to base_dir/<dataset>/<model>.")

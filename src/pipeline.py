@@ -404,7 +404,7 @@ def _run_worker_only_pipeline(
     # Initialize LLM with optimized GPU memory usage
     llm = LLM(
         model=mapped_model_name,
-        gpu_memory_utilization=0.6,
+        gpu_memory_utilization=0.92,
         max_model_len=max_model_len,
         max_num_seqs=1,
         enable_lora=worker_fine_tuned,
@@ -768,7 +768,7 @@ def _run_worker_refiner_pipeline(
         
         worker_llm_temp = LLM(
             model=mapped_worker_model_name, 
-            gpu_memory_utilization=0.6,  
+            gpu_memory_utilization=0.92,  
             max_model_len=max_model_len, 
             max_num_seqs=1,
             enable_lora=True
@@ -791,7 +791,7 @@ def _run_worker_refiner_pipeline(
         
         refiner_llm_temp = LLM(
             model=mapped_refiner_model_name,
-            gpu_memory_utilization=0.6,  
+            gpu_memory_utilization=0.92,  
             max_model_len=max_model_len, 
             max_num_seqs=1,
             enable_lora=refiner_fine_tuned,
@@ -887,7 +887,7 @@ def _run_worker_refiner_pipeline(
         print(f"[SHARING] LoRA support enabled: {worker_fine_tuned or refiner_fine_tuned} (adapters applied conditionally during generation)")
         shared_llm = LLM(
             model=mapped_worker_model_name,
-            gpu_memory_utilization=0.6,
+            gpu_memory_utilization=0.92,
             max_model_len=max_model_len,
             max_num_seqs=1,
             enable_lora=worker_fine_tuned or refiner_fine_tuned,
@@ -944,7 +944,7 @@ def _run_worker_refiner_pipeline(
                         else:
                             worker_llm = LLM(
                                 model=mapped_worker_model_name,
-                                gpu_memory_utilization=0.6,
+                                gpu_memory_utilization=0.92,
                                 max_model_len=max_model_len,
                                 max_num_seqs=1,
                                 enable_lora=worker_fine_tuned,
@@ -1073,7 +1073,7 @@ def _run_worker_refiner_pipeline(
                         else:
                             refiner_llm = LLM(
                                 model=mapped_refiner_model_name,
-                                gpu_memory_utilization=0.6,
+                                gpu_memory_utilization=0.92,
                                 max_model_len=max_model_len,
                                 max_num_seqs=1,
                                 enable_lora=refiner_fine_tuned,

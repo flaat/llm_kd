@@ -17,9 +17,10 @@ worker_model_list=(
     "unsloth_llama_1B-Instruct"
     "unsloth_deepseek_r1_qwen_1.5B"
     "unsloth_qwen3_1.7B"
-    "unsloth_llama_3B-Instruct"
-    "unsloth_qwen_3B"
-    "unsloth_qwen3_4B"
+    #"unsloth_llama_3B-Instruct"
+    #"unsloth_qwen_3B"
+    #"unsloth_qwen3_4B"
+    #"qwen3_30B_A3B"
 )
 
 #
@@ -34,8 +35,16 @@ worker_model_list=(
 #    "unsloth_qwen3_4B"
 #)
 
+DATASETS=(
+    #"adult"
+    "titanic"
+    "california"
+    "diabetes"
+)
+
 # Iterate over each model configuration and run experiment.py accordingly.
-for worker_model in "${worker_model_list[@]}"; do
+for dataset in "${DATASETS[@]}"; do
+    for worker_model in "${worker_model_list[@]}"; do
     echo "⚙️ Running experiment.py with worker model '$worker_model'..."
     
     # Use this line to run asymmetric experiments (worker model not equal to refiner model)
@@ -44,9 +53,8 @@ for worker_model in "${worker_model_list[@]}"; do
         # python experiment.py --dataset="adult" --worker_model_name="$worker_model" --refiner_model_name="$refiner_model" --refiner --worker_fine_tuned --analyze_feasibility
         #python experiment.py --dataset="adult" --worker_model_name="$worker_model" --refiner_model_name="$refiner_model" --refiner --worker_fine_tuned --refiner_fine_tuned --analyze_feasibility
         
-
-        python experiment.py --dataset="california" --worker_model_name="$worker_model" --refiner_model_name="$worker_model" --refiner --worker_fine_tuned --analyze_feasibility
-        python experiment.py --dataset="california" --worker_model_name="$worker_model" --refiner_model_name="$worker_model" --refiner --worker_fine_tuned --refiner_fine_tuned --analyze_feasibility
+        python experiment.py --dataset="adult" --worker_model_name="$worker_model" --refiner_model_name="$worker_model" --refiner --worker_fine_tuned --analyze_feasibility
+        python experiment.py --dataset="adult" --worker_model_name="$worker_model" --refiner_model_name="$worker_model" --refiner --worker_fine_tuned --refiner_fine_tuned --analyze_feasibility
     done
 done
 

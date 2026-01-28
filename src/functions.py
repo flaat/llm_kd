@@ -1587,17 +1587,51 @@ def plot_overall_metrics(overall_metrics: Dict[str, Dict[str, float]], datasets:
 	import matplotlib.pyplot as plt
 	import numpy as np
 
-	models = sorted(overall_metrics.keys())
+	# Desired display/order of models (matching LaTeX/global_results names)
+	desired_model_order = [
+		"qwen_0.5B",
+		"qwen3_0.6B",
+		"llama_1B-Instruct",
+		"deepseek_r1_qwen_1.5B",
+		"qwen3_1.7B",
+		"qwen_3B",
+		"llama_3B-Instruct",
+		"qwen3_4B",
+	]
+	# Pretty names to show in the legend (in the same conceptual order)
+	pretty_model_names = {
+		"qwen_0.5B": "Qwen2.5-0.5B",
+		"qwen3_0.6B": "Qwen3-0.6B",
+		"llama_1B-Instruct": "LLama3.2-1B",
+		"deepseek_r1_qwen_1.5B": "Deepseek-1.5B",
+		"qwen3_1.7B": "Qwen3-1.7B",
+		"qwen_3B": "Qwen2.5-3B",
+		"llama_3B-Instruct": "LLama3.2-3B",
+		"qwen3_4B": "Qwen3-4B",
+	}
+
+	# Reorder models according to desired order, fall back to remaining models (if any)
+	ordered_models: List[str] = [
+		m for m in desired_model_order if m in overall_metrics
+	] + [m for m in overall_metrics.keys() if m not in desired_model_order]
+
+	models = ordered_models
 	if not models:
 		print("Warning: No overall metrics to plot.")
 		return
 
-	clean_model_names = [_clean_model_label(m) for m in models]
-	metrics = [
-		("parsing_rate", "JPR"),
-		("perfect_ff", "PFF"),
-		("inference_time", "Inference Time (s)"),
+	legend_labels = [
+		pretty_model_names.get(m, _clean_model_label(m)) for m in models
 	]
+
+	# Metrics in the order: PFF, Time, JPR
+	metrics = [
+		("perfect_ff", "PFF"),
+		("inference_time", "Time (s)"),
+		("parsing_rate", "JPR"),
+	]
+
+	plt.style.use("seaborn-v0_8-whitegrid")  # more professional look
 
 	fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 	colors = plt.cm.tab10(np.linspace(0, 1, len(models)))
@@ -1606,19 +1640,43 @@ def plot_overall_metrics(overall_metrics: Dict[str, Dict[str, float]], datasets:
 	for idx, (metric_key, metric_label) in enumerate(metrics):
 		ax = axes[idx]
 		values = [float(overall_metrics[m].get(metric_key, 0.0)) for m in models]
-		ax.bar(x, values, color=colors, alpha=0.85)
-		ax.set_title(metric_label, fontsize=11, fontweight="bold")
+		ax.bar(x, values, color=colors, alpha=0.9)
+		# Bigger metric titles above each subplot (PFF, Time, JPR)
+		ax.set_title(metric_label, fontsize=16, fontweight="bold")
+		# Remove x-axis labels; models will be shown in a legend above the plots
 		ax.set_xticks(x)
-		ax.set_xticklabels(clean_model_names, rotation=45, ha="right", fontsize=9)
+		ax.set_xticklabels([""] * len(models))
 		ax.grid(True, linestyle="--", alpha=0.3, axis="y")
-		ax.set_ylabel(metric_label, fontsize=10)
+		ax.set_ylabel(metric_label, fontsize=15)
+		# Make y-axis tick labels much bigger for readability
+		ax.tick_params(axis="y", labelsize=14)
 
-	mode_str = "Worker+Refiner" if refiner else "Worker Only"
-	plt.suptitle(f"Overall ({', '.join(datasets)}) - {mode_str}", fontsize=14, fontweight="bold")
-	plt.tight_layout()
+	# Create a legend above the subplots with the specified model order
+	handles = [
+		plt.Rectangle((0, 0), 1, 1, color=colors[i])
+		for i in range(len(models))
+	]
+	legend = fig.legend(
+		handles,
+		legend_labels,
+		loc="upper center",
+		ncol=len(models),
+		bbox_to_anchor=(0.5, 1.07),
+		frameon=True,
+		fontsize=13,
+	)
+	legend.get_frame().set_edgecolor('black')
+	legend.get_frame().set_linewidth(1.0)
+
+	# No overall title on the figure
+	plt.tight_layout(rect=[0, 0, 1, 0.95])
 
 	output_path.parent.mkdir(parents=True, exist_ok=True)
+	# Save PNG
 	plt.savefig(output_path, dpi=300, bbox_inches="tight")
+	# Also save as PDF
+	pdf_path = output_path.with_suffix(".pdf")
+	plt.savefig(pdf_path, bbox_inches="tight")
 	plt.close(fig)
 
 

@@ -25,6 +25,6 @@ model_list=(
 # Iterate over each model configuration and run finetune.py accordingly.
 for model in "${model_list[@]}"; do
     echo "⚙️ Running finetune.py with model '$model'..."
-    python finetune.py --model_name="$model" --dataset="california" --refiner 
+    python finetune.py --model_name="$model" --dataset="adult" --refiner 
 done
 

@@ -17,9 +17,10 @@ model_list=(
     "unsloth_llama_1B-Instruct"
     "unsloth_deepseek_r1_qwen_1.5B"
     "unsloth_qwen3_1.7B"
-    "unsloth_llama_3B-Instruct"
-    "unsloth_qwen_3B"
-    "unsloth_qwen3_4B"
+    #"unsloth_llama_3B-Instruct"
+    #"unsloth_qwen_3B"
+    #"unsloth_qwen3_4B"
+    #"qwen3_30B_A3B"
 )
 
 DATASETS=(
