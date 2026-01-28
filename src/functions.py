@@ -2286,8 +2286,9 @@ def collect_number_narratives_metrics(
     datasets: List[str],
     models: List[str],
     num_narratives: int,
-    n_start: int = 3,
-    alphas: List[float] = [0.6]
+    n_start: int = 2,
+    alphas: List[float] = [0.6],
+    temperature: float = 0.6,
 ) -> Dict[str, Dict[str, Dict[int, Dict[str, Any]]]]:
     """
     Collect NCS, Jaccard, and Ranking metrics for number-of-narratives analysis.
@@ -2306,6 +2307,8 @@ def collect_number_narratives_metrics(
         num_narratives: K value (max narratives generated per sample)
         n_start: Minimum N for subset sampling (default 3)
         alphas: List of alpha parameters for coherence score (default [0.6])
+        temperature: Sampling temperature used when generating narratives. Files are
+            expected to follow the pattern {model}_t_{temperature}.json.
     
     Returns:
         Dict structure: {dataset: {model: {N: {"ncs_alpha_0.5": {...}, "ncs_alpha_0.6": {...}, 
@@ -2319,12 +2322,19 @@ def collect_number_narratives_metrics(
         results[dataset] = {}
         
         for model in models:
-            # Load JSON file for this model/dataset
-            json_path = base_dir / dataset / f"{model}.json"
+            # Load JSON file for this model/dataset (new pattern includes temperature tag)
+            temperature_tag = f"{temperature:g}"
+            json_path = base_dir / dataset / f"{model}_t_{temperature_tag}.json"
             
             if not json_path.exists():
-                print(f"Warning: File not found: {json_path}")
-                continue
+                # Fallback to legacy filename without temperature for backward compatibility
+                legacy_path = base_dir / dataset / f"{model}.json"
+                if legacy_path.exists():
+                    print(f"Info: Using legacy file name for {model} on {dataset}: {legacy_path}")
+                    json_path = legacy_path
+                else:
+                    print(f"Warning: File not found: {json_path}")
+                    continue
             
             try:
                 with json_path.open("r", encoding="utf-8") as f:
@@ -2449,78 +2459,500 @@ def plot_number_narratives_metrics(
     dataset_name: str,
     metric_key: str,
     metric_label: str,
-    n_start: int = 3,
-    num_narratives: int = 8
+    n_start: int = 2,
+    num_narratives: int = 8,
+    plot_delta: bool = False,
+    dual_axis: bool = False,
 ) -> None:
     """
-    Generate plot of a specific metric (with std error bars) vs N for all models.
-    
-    Args:
-        metrics: Dict structure {model: {N: {metric_key: {"mean": float, "std": float}}}}
-        output_path: Path to save the plot
-        dataset_name: Name of the dataset for title
-        metric_key: Key to extract from metrics (e.g., "ncs_alpha_0.6", "jaccard", "ranking")
-        metric_label: Label for y-axis (e.g., "NCS (α=0.6)", "Jaccard Similarity", "Ranking Similarity")
-        n_start: Minimum N value (default 3)
-        num_narratives: Maximum N value (default 8)
+    Generate an aggregate plot (mean across models + variability band) vs N.
+    Modes:
+    - default: absolute mean (with optional per-model background)
+    - plot_delta=True: single-axis Δ(N)=metric(N)-metric(N-1)
+    - dual_axis=True: left axis absolute mean; right axis std across models (stability)
     """
     import matplotlib.pyplot as plt
+    import numpy as np
     
     if not metrics:
         print(f"Warning: No metrics to plot for {dataset_name}")
         return
     
+    # Clean theme without adding dependencies
+    plt.style.use("seaborn-v0_8-whitegrid")
     fig, ax = plt.subplots(figsize=(10, 6))
     
-    # X-axis values
-    n_values = list(range(n_start, num_narratives + 1))
+    # Use N in [n_start, num_narratives] (now including N=8 when available)
+    n_max = min(num_narratives, 8)
+    n_values = list(range(n_start, n_max + 1))
+    x_values = n_values
     
-    # Color palette
-    colors = plt.cm.tab10(np.linspace(0, 1, len(metrics)))
+    per_model_series: List[np.ndarray] = []
+    per_model_std_series: List[np.ndarray] = []  # Internal std for each model
     
-    for idx, (model_name, model_metrics) in enumerate(sorted(metrics.items())):
-        means = []
-        stds = []
-        valid_n = []
-        
+    # Optional background: thin, transparent lines for individual models
+    for _, model_metrics in sorted(metrics.items()):
+        series = []
+        std_series = []
         for n in n_values:
+            mean_val = np.nan
+            std_val = np.nan
             if n in model_metrics and metric_key in model_metrics[n]:
                 metric_data = model_metrics[n][metric_key]
-                if isinstance(metric_data, dict) and not np.isnan(metric_data.get("mean", np.nan)):
-                    means.append(metric_data["mean"])
-                    stds.append(metric_data["std"])
-                    valid_n.append(n)
+                if isinstance(metric_data, dict):
+                    mean_val = metric_data.get("mean", np.nan)
+                    std_val = metric_data.get("std", np.nan)
+            series.append(mean_val)
+            std_series.append(std_val)
         
-        if valid_n:
-            # Clean model name for display
-            display_name = model_name
-            if display_name.startswith("unsloth_"):
-                display_name = display_name[len("unsloth_"):]
-            
-            ax.errorbar(
-                valid_n,
-                means,
-                yerr=stds,
-                marker='o',
-                capsize=4,
-                color=colors[idx],
-                label=display_name,
-                linewidth=2,
-                markersize=6
-            )
+        series_arr = np.array(series, dtype=float)
+        std_arr = np.array(std_series, dtype=float)
+        if np.all(np.isnan(series_arr)):
+            continue
+        
+        if plot_delta:
+            # Δ(N) is defined for N >= n_start + 1
+            series_arr = np.diff(series_arr)
+            std_arr = std_arr[1:]  # Adjust std for delta
+        
+        per_model_series.append(series_arr)
+        per_model_std_series.append(std_arr)
+
+    if plot_delta and not dual_axis:
+        x_values = n_values[1:]
     
-    ax.set_xlabel("Number of Narratives (N)", fontsize=12)
-    ax.set_ylabel(metric_label, fontsize=12)
-    ax.set_title(f"{metric_label} vs Number of Narratives - {dataset_name}", fontsize=14, fontweight="bold")
-    ax.set_xticks(n_values)
-    ax.set_ylim(0, 1)
-    ax.grid(True, linestyle="--", alpha=0.3)
-    ax.legend(loc="best", fontsize=10)
+    if not per_model_series:
+        print(f"Warning: No valid metrics to plot for {dataset_name}")
+        return
+    
+    values_matrix = np.vstack(per_model_series)
+    mean_series = np.nanmean(values_matrix, axis=0)
+    
+    # Calculate std between mean values (variability between models/datasets)
+    std_between = np.nanstd(values_matrix, axis=0)
+    
+    # Calculate average of internal stds (average internal variability)
+    std_matrix = np.vstack(per_model_std_series)
+    std_internal_mean = np.nanmean(std_matrix, axis=0)
+    
+    # Combine both components: total std = sqrt(std_between^2 + std_internal_mean^2)
+    # This reflects both between-group and within-group variability
+    std_series = np.sqrt(std_between**2 + std_internal_mean**2)
+    
+    mean_masked = np.ma.masked_invalid(mean_series)
+    std_masked = np.ma.masked_invalid(std_series)
+    
+    if dual_axis:
+        # Dual-axis view: absolute mean (left) and std across models (right)
+        ax_left = ax
+        ax_right = ax_left.twinx()
+
+        # Absolute mean on left
+        mean_label = f"Mean {metric_label}"
+        ax_left.plot(
+            n_values,
+            mean_masked,
+            color="tab:blue",
+            linewidth=3,
+            marker="o",
+            markersize=6,
+            label=mean_label,
+            zorder=3,
+        )
+        ax_left.fill_between(
+            n_values,
+            mean_masked - std_masked,
+            mean_masked + std_masked,
+            color="tab:blue",
+            alpha=0.08,
+            zorder=2,
+            label="_nolegend_",
+        )
+
+        # Std dev on right (stability across models)
+        std_masked_right = np.ma.masked_invalid(std_series)
+        ax_right.plot(
+            n_values,
+            std_masked_right,
+            color="tab:orange",
+            linewidth=2,
+            linestyle="--",
+            marker="x",
+            markersize=6,
+            alpha=0.8,
+            label="Model Variance (Std Dev)",
+            zorder=3,
+        )
+
+        # Labels and limits
+        ax_left.set_xlabel("Number of Narratives", fontsize=12)
+        ax_left.set_ylabel("Average Diversity (NCS)", fontsize=12, color="tab:blue")
+        ax_right.set_ylabel("Model Variance (Std Dev)", fontsize=12, color="tab:orange")
+        ax_left.set_title(f"{dataset_name} — {metric_label} vs Number of Narratives", fontsize=14, fontweight="bold")
+        ax_left.set_xticks(n_values)
+
+        # Left y-limits tight to data (no zero baseline)
+        if np.any(~np.isnan(mean_series)):
+            y_min = np.nanmin(mean_series)
+            y_max = np.nanmax(mean_series)
+            ax_left.set_ylim(y_min - 0.01, y_max + 0.01)
+        else:
+            ax_left.set_ylim(0.6, 0.9)
+
+        # Right y-limits based on std
+        if np.any(~np.isnan(std_series)):
+            s_min = np.nanmin(std_series)
+            s_max = np.nanmax(std_series)
+            span = s_max - s_min
+            pad = max(0.001, span * 0.15)
+            ax_right.set_ylim(max(0.0, s_min - pad), s_max + pad)
+
+        # Highlight N=5
+        ax_left.axvline(
+            x=5,
+            linestyle="--",
+            color="red",
+            linewidth=1.5,
+            alpha=0.7,
+            label="_nolegend_",
+        )
+        annot_y = ax_left.get_ylim()[0] + (ax_left.get_ylim()[1] - ax_left.get_ylim()[0]) * 0.85
+        ax_left.text(
+            5.05,
+            annot_y,
+            "Stability Point",
+            color="red",
+            fontsize=11,
+            va="center",
+        )
+
+        # Legend combining both axes
+        handles_left, labels_left = ax_left.get_legend_handles_labels()
+        handles_right, labels_right = ax_right.get_legend_handles_labels()
+        handles = handles_left + handles_right
+        labels = labels_left + labels_right
+        ax_left.legend(handles, labels, loc="best", fontsize=10, frameon=False)
+
+    else:
+        # Single-axis mode (absolute or delta)
+        # Aggregate mean with dots and shaded area for stddev
+        mean_label = f"Mean {'Δ ' if plot_delta else ''}{metric_label}"
+        
+        # Fill area for stddev (mean ± std) with visible border
+        ax.fill_between(
+            x_values,
+            mean_masked - std_masked,
+            mean_masked + std_masked,
+            color="tab:blue",
+            alpha=0.2,
+            edgecolor="tab:blue",
+            linewidth=1.5,
+            zorder=1,
+            label="_nolegend_",
+        )
+        
+        # Plot line with dots for mean values
+        ax.plot(
+            x_values,
+            mean_masked,
+            color="tab:blue",
+            marker="o",
+            markersize=8,
+            linewidth=2.5,
+            label=mean_label,
+            zorder=3,
+        )
+        
+        # Larger labels for overall plots
+        label_fontsize = 22 if dataset_name.lower() == "overall" else 16
+        tick_fontsize = 18 if dataset_name.lower() == "overall" else 14
+        
+        ax.set_xlabel("Number of Narratives", fontsize=label_fontsize, fontweight="medium")
+        ax.set_ylabel(f"Δ {metric_label}" if plot_delta else metric_label, fontsize=label_fontsize, fontweight="medium")
+        
+        # Only show title if not "Overall" (global plots)
+        if dataset_name.lower() != "overall":
+            title_metric = f"Δ {metric_label}" if plot_delta else metric_label
+            ax.set_title(f"{dataset_name} — {title_metric} vs Number of Narratives", fontsize=14, fontweight="bold")
+        
+        ax.set_xticks(x_values)
+        ax.tick_params(axis='both', which='major', labelsize=tick_fontsize)
+        
+        # Adjust y-axis interval based on data range
+        valid_mean = mean_series[~np.isnan(mean_series)]
+        valid_std = std_series[~np.isnan(std_series)]
+        if valid_mean.size > 0 and valid_std.size > 0:
+            span_min = np.nanmin(mean_series - std_series)
+            span_max = np.nanmax(mean_series + std_series)
+            padding = max(0.02, (span_max - span_min) * 0.1)  # 10% padding
+            y_min = max(0.0, span_min - padding)
+            y_max = min(1.05, span_max + padding)
+        else:
+            # Fallback defaults
+            is_ncs_metric = "ncs" in metric_key.lower()
+            if is_ncs_metric and not plot_delta:
+                y_min, y_max = 0.4, 0.95
+            else:
+                y_min, y_max = 0.0, 1.0
+        ax.set_ylim(y_min, y_max)
+        if plot_delta:
+            ax.axhline(0, color="black", linewidth=1.0, alpha=0.25, zorder=0)
+        
+        # Add red dashed vertical line at N=5
+        ax.axvline(
+            x=5,
+            linestyle="--",
+            color="red",
+            linewidth=2,
+            alpha=0.8,
+            zorder=2,
+            label="_nolegend_",
+        )
+        
+        # Professional styling
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_linewidth(1.2)
+        ax.spines['bottom'].set_linewidth(1.2)
+        ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.8)
+        
+        # Only show legend if not "Overall"
+        if dataset_name.lower() != "overall":
+            ax.legend(loc="upper left", fontsize=12, frameon=True, fancybox=True, shadow=True)
     
     plt.tight_layout()
     
     output_path.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path, dpi=300, bbox_inches="tight")
+    
+    # Also save as PDF for "Overall" plots
+    if dataset_name.lower() == "overall":
+        pdf_path = output_path.with_suffix(".pdf")
+        plt.savefig(pdf_path, bbox_inches="tight", format="pdf")
+        print(f"Plot also saved to: {pdf_path}")
+    
+    plt.close(fig)
+    print(f"Plot saved to: {output_path}")
+
+
+def _get_model_display_name(model_name: str) -> str:
+    """
+    Map model names to display names.
+    """
+    # Remove dataset prefix if present (for overall plots)
+    clean_name = model_name.split("::")[-1] if "::" in model_name else model_name
+    
+    mapping = {
+        "unsloth_qwen_0.5B": "Qwen2.5-0.5B",
+        "unsloth_qwen3_0.6B": "Qwen3-0.6B",
+        "unsloth_llama_1B-Instruct": "LLama3.2-1B",
+        "unsloth_deepseek_r1_qwen_1.5B": "Deepseek-1.5B",
+        "unsloth_qwen3_1.7B": "Qwen3-1.7B",
+        "unsloth_llama_3B-Instruct": "LLama3.2-3B",
+        "unsloth_qwen_3B": "Qwen2.5-3B",
+    }
+    return mapping.get(clean_name, clean_name)
+
+
+def _get_model_sort_key(model_name: str) -> int:
+    """
+    Get sort key for model ordering in legend.
+    Returns a number that determines the order in the legend.
+    """
+    # Remove dataset prefix if present (for overall plots)
+    clean_name = model_name.split("::")[-1] if "::" in model_name else model_name
+    
+    order = {
+        "unsloth_qwen_0.5B": 1,
+        "unsloth_qwen3_0.6B": 2,
+        "unsloth_llama_1B-Instruct": 3,
+        "unsloth_deepseek_r1_qwen_1.5B": 4,
+        "unsloth_qwen3_1.7B": 5,
+        "unsloth_llama_3B-Instruct": 6,
+        "unsloth_qwen_3B": 7,
+    }
+    return order.get(clean_name, 999)  # Unknown models go to the end
+
+
+def plot_number_narratives_metrics_all_models(
+    metrics: Dict[str, Dict[int, Dict[str, Any]]],
+    output_path: Path,
+    dataset_name: str,
+    metric_key: str,
+    metric_label: str,
+    n_start: int = 2,
+    num_narratives: int = 8,
+    plot_delta: bool = False,
+) -> None:
+    """
+    Generate a plot showing all models separately with different colors.
+    Each model gets its own line with dots and shaded area for stddev.
+    """
+    import matplotlib.pyplot as plt
+    import numpy as np
+    
+    if not metrics:
+        print(f"Warning: No metrics to plot for {dataset_name}")
+        return
+    
+    # Clean theme without adding dependencies
+    plt.style.use("seaborn-v0_8-whitegrid")
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    # Use N in [n_start, num_narratives] (now including N=8 when available)
+    n_max = min(num_narratives, 8)
+    n_values = list(range(n_start, n_max + 1))
+    x_values = n_values
+    
+    # Sort model names according to specified order
+    model_names = sorted(metrics.keys(), key=_get_model_sort_key)
+    if not model_names:
+        print(f"Warning: No valid models to plot for {dataset_name}")
+        return
+    
+    # Generate distinct colors for each model
+    colors = plt.cm.tab10(np.linspace(0, 1, len(model_names)))
+    
+    # Plot each model separately
+    for idx, model_name in enumerate(model_names):
+        model_metrics = metrics[model_name]
+        series = []
+        std_series = []
+        
+        for n in n_values:
+            mean_val = np.nan
+            std_val = np.nan
+            if n in model_metrics and metric_key in model_metrics[n]:
+                metric_data = model_metrics[n][metric_key]
+                if isinstance(metric_data, dict):
+                    mean_val = metric_data.get("mean", np.nan)
+                    std_val = metric_data.get("std", np.nan)
+            series.append(mean_val)
+            std_series.append(std_val)
+        
+        series_arr = np.array(series, dtype=float)
+        std_arr = np.array(std_series, dtype=float)
+        
+        if plot_delta:
+            # Δ(N) is defined for N >= n_start + 1
+            series_arr = np.diff(series_arr)
+            std_arr = std_arr[1:]  # Adjust std for delta
+        
+        if np.all(np.isnan(series_arr)):
+            continue
+        
+        mean_masked = np.ma.masked_invalid(series_arr)
+        std_masked = np.ma.masked_invalid(std_arr)
+        
+        # Get display name for legend
+        clean_model_name = _get_model_display_name(model_name)
+        
+        # Fill area for stddev
+        ax.fill_between(
+            x_values[1:] if plot_delta else x_values,
+            mean_masked - std_masked,
+            mean_masked + std_masked,
+            color=colors[idx],
+            alpha=0.2,
+            edgecolor=colors[idx],
+            linewidth=1.0,
+            zorder=1,
+            label="_nolegend_",
+        )
+        
+        # Plot line with dots
+        ax.plot(
+            x_values[1:] if plot_delta else x_values,
+            mean_masked,
+            color=colors[idx],
+            marker="o",
+            markersize=6,
+            linewidth=2,
+            label=clean_model_name,
+            zorder=3,
+        )
+    
+    # Larger labels for overall plots
+    label_fontsize = 22 if dataset_name.lower() == "overall" else 16
+    tick_fontsize = 18 if dataset_name.lower() == "overall" else 14
+    
+    ax.set_xlabel("Number of Narratives", fontsize=label_fontsize, fontweight="medium")
+    ax.set_ylabel(f"Δ {metric_label}" if plot_delta else metric_label, fontsize=label_fontsize, fontweight="medium")
+    
+    # Only show title if not "Overall" (global plots)
+    if dataset_name.lower() != "overall":
+        title_metric = f"Δ {metric_label}" if plot_delta else metric_label
+        ax.set_title(f"{dataset_name} — {title_metric} vs Number of Narratives", fontsize=14, fontweight="bold")
+    
+    ax.set_xticks(x_values)
+    ax.tick_params(axis='both', which='major', labelsize=tick_fontsize)
+    
+    # Adjust y-axis interval based on data range
+    all_means = []
+    all_stds = []
+    for model_name in model_names:
+        model_metrics = metrics[model_name]
+        for n in n_values:
+            if n in model_metrics and metric_key in model_metrics[n]:
+                metric_data = model_metrics[n][metric_key]
+                if isinstance(metric_data, dict):
+                    mean_val = metric_data.get("mean", np.nan)
+                    std_val = metric_data.get("std", np.nan)
+                    if not np.isnan(mean_val):
+                        all_means.append(mean_val)
+                        all_stds.append(std_val)
+    
+    if all_means:
+        span_min = min([m - s for m, s in zip(all_means, all_stds) if not np.isnan(m) and not np.isnan(s)])
+        span_max = max([m + s for m, s in zip(all_means, all_stds) if not np.isnan(m) and not np.isnan(s)])
+        padding = max(0.02, (span_max - span_min) * 0.1)
+        y_min = max(0.0, span_min - padding)
+        y_max = min(1.05, span_max + padding)
+    else:
+        is_ncs_metric = "ncs" in metric_key.lower()
+        if is_ncs_metric and not plot_delta:
+            y_min, y_max = 0.4, 0.95
+        else:
+            y_min, y_max = 0.0, 1.0
+    
+    ax.set_ylim(y_min, y_max)
+    
+    if plot_delta:
+        ax.axhline(0, color="black", linewidth=1.0, alpha=0.25, zorder=0)
+    
+    # Add red dashed vertical line at N=5
+    ax.axvline(
+        x=5,
+        linestyle="--",
+        color="red",
+        linewidth=2,
+        alpha=0.8,
+        zorder=2,
+        label="_nolegend_",
+    )
+    
+    # Professional styling
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_linewidth(1.2)
+    ax.spines['bottom'].set_linewidth(1.2)
+    ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.8)
+    
+    # Only show legend if not "Overall"
+    if dataset_name.lower() != "overall":
+        ax.legend(loc="upper right", fontsize=10, frameon=True, fancybox=True, shadow=True, ncol=2)
+    
+    plt.tight_layout()
+    
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(output_path, dpi=300, bbox_inches="tight")
+    
+    # Also save as PDF for "Overall" plots
+    if dataset_name.lower() == "overall":
+        pdf_path = output_path.with_suffix(".pdf")
+        plt.savefig(pdf_path, bbox_inches="tight", format="pdf")
+        print(f"Plot also saved to: {pdf_path}")
+    
     plt.close(fig)
     print(f"Plot saved to: {output_path}")
 

@@ -19,6 +19,7 @@ model_list=(
     "unsloth_qwen3_1.7B"
     "unsloth_llama_3B-Instruct"
     "unsloth_qwen_3B"
+    #"unsloth_qwen3_4B"
 )
 
 DATASETS=(
@@ -28,11 +29,19 @@ DATASETS=(
     "diabetes"
 )
 
+TEMPERATURES=(
+    "0.1"
+    "0.6"
+    "1.0"
+)
+
 # Iterate over each model and run num_narratives.py accordingly.
 for dataset in "${DATASETS[@]}"; do
     for model in "${model_list[@]}"; do
-        echo "Running num_narratives.py with model '$model' and dataset '$dataset'..."
-        python num_narratives.py --dataset="$dataset" --worker_model_name="$model"
+        for temperature in "${TEMPERATURES[@]}"; do
+            echo "Running num_narratives.py with model '$model', dataset '$dataset', temperature '$temperature'..."
+            python num_narratives.py --dataset="$dataset" --worker_model_name="$model" --temperature="$temperature"
+        done
     done
 done
 

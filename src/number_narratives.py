@@ -134,7 +134,7 @@ def assess_narratives(
 ) -> None:
     """
     Generate K narratives per sample across the validation set.
-    Saves raw responses to results/number_narratives/{dataset}/{model_name}.json
+    Saves raw responses to results/number_narratives/{dataset}/{model_name}_t_{temperature}.json
     """
     logger.info("=" * 60)
     logger.info(f"Starting narrative generation for model: {model_name}, dataset: {dataset}")
@@ -158,7 +158,8 @@ def assess_narratives(
     # Prepare output directory & file
     out_dir = os.path.join("results", "number_narratives", dataset)
     _ensure_outdir(out_dir)
-    out_json = os.path.join(out_dir, f"{model_name}.json")
+    temperature_tag = f"{temperature:g}"
+    out_json = os.path.join(out_dir, f"{model_name}_t_{temperature_tag}.json")
     logger.info(f"Output directory: {out_dir}")
     logger.info(f"Output JSON file: {out_json}")
 
